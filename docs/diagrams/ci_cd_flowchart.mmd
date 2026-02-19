@@ -1,0 +1,26 @@
+flowchart TD
+    A[Developer pushes commit<br/>to GitHub] --> B[GitHub Webhook<br/>/github-webhook/]
+    B --> C[Jenkins Multibranch Scan]
+    C --> D[Branch Job Starts]
+
+    D --> E[Stage: Checkout]
+    E --> F[Stage: Backend Tests and SAST<br/>pytest + bandit + pip-audit]
+    F --> G{Backend stage pass?}
+    G -- No --> Z1[Pipeline FAILED]
+    G -- Yes --> H[Stage: Frontend Audit<br/>npm ci + npm audit]
+    H --> I{Frontend stage pass?}
+    I -- No --> Z1
+    I -- Yes --> J[Stage: Build Containers<br/>docker compose build]
+    J --> K{Build stage pass?}
+    K -- No --> Z1
+    K -- Yes --> L{Branch == master-staging?}
+
+    L -- No --> Z2[CI SUCCESS<br/>No deploy]
+    L -- Yes --> M[Stage: Deploy Staging VM<br/>SSH with Jenkins credentials]
+    M --> N[On VM: git fetch/checkout/pull]
+    N --> O[On VM: docker compose up -d --build --remove-orphans]
+    O --> P[On VM: health check<br/>curl localhost:8080/healthz with retries]
+    P --> Q{Health check pass?}
+    Q -- No --> R[Collect docker compose ps + logs]
+    R --> Z1
+    Q -- Yes --> Z3[CI/CD SUCCESS<br/>Staging updated]

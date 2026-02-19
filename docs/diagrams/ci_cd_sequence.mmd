@@ -1,0 +1,38 @@
+sequenceDiagram
+    autonumber
+    participant Dev as Developer
+    participant GH as GitHub
+    participant J as Jenkins (Multibranch)
+    participant VM as Staging VM
+    participant DC as Docker Compose
+    participant FE as Frontend (Nginx)
+    participant BE as Backend (FastAPI)
+
+    Dev->>GH: Push commit to master-staging
+    GH->>J: Webhook POST (/github-webhook/)
+    J->>J: Branch indexing + load Jenkinsfile
+    J->>J: Checkout stage
+    J->>J: Backend Tests and SAST (pytest, bandit, pip-audit)
+    alt Backend checks fail
+        J-->>GH: Build status = failed
+    else Backend checks pass
+        J->>J: Frontend Audit (npm ci, npm audit --audit-level=high)
+        alt Frontend audit fails
+            J-->>GH: Build status = failed
+        else Frontend audit passes
+            J->>J: Build Containers (docker compose build)
+            alt Build fails
+                J-->>GH: Build status = failed
+            else Build succeeds
+                J->>VM: SSH deploy (csc-vm-ssh + csc-vm-host)
+                VM->>VM: git fetch/checkout/pull master-staging
+                VM->>DC: docker compose up -d --build --remove-orphans
+                VM->>FE: curl localhost:8080/healthz (retry loop)
+                FE->>BE: Proxy /healthz to backend
+                BE-->>FE: 200 OK
+                FE-->>VM: 200 OK
+                VM->>DC: docker compose ps
+                J-->>GH: Build status = success
+            end
+        end
+    end
