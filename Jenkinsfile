@@ -67,7 +67,12 @@ pipeline {
                            git checkout ${BRANCH_NAME}; \
                            git pull --ff-only origin ${BRANCH_NAME}; \
                            docker compose up -d --build --remove-orphans; \
-                           curl -fsS http://localhost:8080/healthz >/dev/null; \
+                           curl -fsS --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8080/healthz >/dev/null || { \
+                             echo 'Health check failed after retries'; \
+                             docker compose ps; \
+                             docker compose logs --tail=120 backend frontend; \
+                             exit 1; \
+                           }; \
                            docker compose ps"
                     '''
                 }
