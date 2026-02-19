@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const API_CHAT_PATH = "/api/chat";
 
 export default function App() {
   const [prompt, setPrompt] = useState("");
@@ -15,7 +15,7 @@ export default function App() {
     setReply("");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/chat`, {
+      const response = await fetch(API_CHAT_PATH, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

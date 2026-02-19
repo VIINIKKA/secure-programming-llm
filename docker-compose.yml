@@ -35,15 +35,13 @@ services:
     depends_on:
       - ollama
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     networks:
       - app_net
 
   frontend:
     build:
       context: ./frontend
-      args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
     container_name: secure-llm-frontend
     restart: unless-stopped
     depends_on:

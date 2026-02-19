@@ -5,8 +5,8 @@ class Settings(BaseSettings):
     app_name: str = "Secure LLM Assistant Backend"
     log_level: str = "INFO"
 
-    frontend_origin: str = "http://localhost:8080"
-    allowed_origins: str = "http://localhost:8080"
+    public_url: str = "http://localhost:8080"
+    allowed_origins: str = ""
 
     ollama_base_url: str = "http://ollama:11434"
     ollama_model: str = "mistral"
@@ -31,8 +31,11 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> list[str]:
-        origins = [origin.strip() for origin in self.allowed_origins.split(",")]
-        return [origin for origin in origins if origin]
+        configured = [origin.strip() for origin in self.allowed_origins.split(",")]
+        configured = [origin for origin in configured if origin]
+        if configured:
+            return configured
+        return [self.public_url.rstrip("/")]
 
 
 settings = Settings()
