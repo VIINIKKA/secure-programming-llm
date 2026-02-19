@@ -1,0 +1,120 @@
+# -----------------------------
+# Secrets and local environment
+# -----------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.kdbx
+
+# -----------------------------
+# Python
+# -----------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.python-version
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+site/
+build/
+dist/
+*.egg
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+wheelhouse/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# -----------------------------
+# Node / frontend
+# -----------------------------
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+.npm/
+.yarn/
+.parcel-cache/
+.next/
+.nuxt/
+.svelte-kit/
+vite.svg
+*.tsbuildinfo
+
+# -----------------------------
+# Test and runtime artifacts
+# -----------------------------
+logs/
+*.log
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
+*.pid
+*.seed
+
+# -----------------------------
+# Docker / containers
+# -----------------------------
+.docker/
+docker-data/
+*.tar
+docker-compose.override.yml
+
+# -----------------------------
+# IDE / editor
+# -----------------------------
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.iml
+*.suo
+*.user
+*.userossc
+*.sln.docstates
+
+# -----------------------------
+# OS files
+# -----------------------------
+.DS_Store
+.DS_Store?
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.Spotlight-V100/
+.Trashes/
+
+# -----------------------------
+# Project-specific caches
+# -----------------------------
+backend/.mypy_cache/
+backend/.ruff_cache/
