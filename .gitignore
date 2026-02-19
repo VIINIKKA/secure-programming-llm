@@ -118,3 +118,9 @@ $RECYCLE.BIN/
 # -----------------------------
 backend/.mypy_cache/
 backend/.ruff_cache/
+
+# -----------------------------
+# Project documentation (local)
+# -----------------------------
+project_architecture.md
+project_general_outline.pdf
