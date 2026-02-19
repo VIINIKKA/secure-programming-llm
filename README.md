@@ -16,7 +16,7 @@ newgrp docker
 
 Optional hardening:
 - Disable SSH password auth and root login.
-- Allow only required ports with UFW (`22`, `80`, `443` or `8080`/`8000` during development).
+- Allow only required ports with UFW (`22`, `80`, `443` or `8080` during development).
 
 ## 2. Configure Environment
 
@@ -25,7 +25,7 @@ cp .env.example .env
 ```
 
 Edit `.env` values:
-- `ALLOWED_ORIGINS` and `FRONTEND_ORIGIN` should match your frontend URL on the VM.
+- `PUBLIC_URL` should match your frontend URL on the VM (for example `http://<floating-ip>:8080`).
 - `OLLAMA_MODEL` defaults to `mistral`.
 
 ## 3. Start the Stack
@@ -44,7 +44,7 @@ Then verify:
 
 ```bash
 docker compose ps
-curl http://localhost:8000/healthz
+curl http://localhost:8080/healthz
 ```
 
 Frontend is available at `http://localhost:8080`.
@@ -90,3 +90,19 @@ Response:
   "input_tokens": 42
 }
 ```
+
+## 7. Auto Deploy on `master-staging` (Jenkins)
+
+The `Jenkinsfile` now deploys automatically to your VM when branch `master-staging` is built.
+
+One-time Jenkins setup:
+- Add an `SSH Username with private key` credential with ID `csc-vm-ssh`.
+- Add a `Secret text` credential with ID `csc-vm-host` containing your VM floating IP or DNS.
+- Configure multibranch/webhook so pushes/merges to `master-staging` trigger a build.
+- Ensure repository exists on VM at `/home/<ssh-user>/secure-programming-llm` and `.env` is already configured there.
+
+Deploy behavior on each `master-staging` build:
+- Runs tests/audits/build stages first.
+- SSH to VM and fast-forward pulls `master-staging` in `/home/<ssh-user>/secure-programming-llm`.
+- Executes `docker compose up -d --build --remove-orphans`.
+- Verifies health via `http://localhost:8080/healthz`.
