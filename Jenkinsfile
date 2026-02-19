@@ -57,10 +57,10 @@ pipeline {
                     string(credentialsId: 'csc-vm-host', variable: 'DEPLOY_HOST'),
                 ]) {
                     sh '''
-                        set -euo pipefail
+                        set -eu
                         DEPLOY_PATH="/home/${DEPLOY_USER}/secure-programming-llm"
                         ssh -i "${SSH_KEY_FILE}" -o BatchMode=yes -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" \
-                          "set -euo pipefail; \
+                          "set -eu; \
                            cd ${DEPLOY_PATH}; \
                            test -f .env || { echo '.env missing in ${DEPLOY_PATH}'; exit 1; }; \
                            git fetch origin ${BRANCH_NAME}; \
