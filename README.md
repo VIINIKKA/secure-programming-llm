@@ -26,7 +26,8 @@ cp .env.example .env
 
 Edit `.env` values:
 - `PUBLIC_URL` should match your frontend URL on the VM (for example `http://<floating-ip>:8080`).
-- `OLLAMA_MODEL` defaults to `mistral`.
+- `OLLAMA_MODEL` defaults to `llama3.2:3b` (faster on CPU than larger models).
+- `OLLAMA_KEEP_ALIVE` keeps model loaded between requests (default `10m`).
 - `AUTH_USERNAME`/`AUTH_PASSWORD` are used by `/auth/login`.
 - `JWT_SECRET` must be set to a long random value.
 
@@ -56,6 +57,7 @@ Frontend is available at `http://localhost:8080`.
 - Sanitized logging only (no raw PII logging).
 - Rate limiting (`RATE_LIMIT`) and input/output token guardrails.
 - JWT access token flow (`/auth/login`, `Authorization: Bearer <token>`).
+- Streaming chat endpoint (`/api/chat/stream`) for faster time-to-first-token.
 - Strict Pydantic request validation.
 - CORS restricted to configured origins.
 - Container runtime hardening for app services (`read_only`, `no-new-privileges`, capability drop, health checks).
@@ -74,6 +76,7 @@ pytest -q backend/tests
 - `GET /healthz`
 - `POST /auth/login`
 - `POST /api/chat`
+- `POST /api/chat/stream` (SSE stream)
 
 Login request (JWT mode):
 
@@ -99,7 +102,7 @@ Request:
 ```json
 {
   "prompt": "Your question",
-  "max_output_tokens": 256
+  "max_output_tokens": 128
 }
 ```
 
@@ -117,6 +120,21 @@ Response:
   "pii_redacted": true,
   "input_tokens": 42
 }
+```
+
+Streaming response format (`POST /api/chat/stream`):
+- Response content type is `text/event-stream`.
+- Events are emitted as `data: {...}` blocks.
+- Token chunk event:
+
+```text
+data: {"delta":"Hello "}
+```
+
+- Final event:
+
+```text
+data: {"done":true,"input_tokens":42,"pii_redacted":true}
 ```
 
 ## 7. Auto Deploy on `master-staging` (Jenkins)

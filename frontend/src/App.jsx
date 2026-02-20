@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
 const API_CHAT_PATH = "/api/chat";
+const API_CHAT_STREAM_PATH = "/api/chat/stream";
 const API_LOGIN_PATH = "/auth/login";
-const DEFAULT_MAX_OUTPUT_TOKENS = 256;
+const DEFAULT_MAX_OUTPUT_TOKENS = 128;
 
 function parseApiError(status, payload, fallback) {
   if (payload && typeof payload === "object") {
@@ -28,6 +29,19 @@ async function parseResponseBody(response) {
   };
 }
 
+function parseSseEvent(rawBlock) {
+  const lines = rawBlock.split("\n");
+  const dataLines = lines.filter((line) => line.startsWith("data:"));
+  if (dataLines.length === 0) {
+    return null;
+  }
+  const payload = dataLines.map((line) => line.slice(5).trim()).join("\n");
+  if (!payload) {
+    return null;
+  }
+  return JSON.parse(payload);
+}
+
 export default function App() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -51,16 +65,21 @@ export default function App() {
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
-  function addMessage(role, text) {
+  function addMessage(role, text, id = createMessageId()) {
     setMessages((current) => [
       ...current,
       {
-        id: createMessageId(),
+        id,
         role,
         text,
         createdAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       },
     ]);
+    return id;
+  }
+
+  function setMessageText(id, text) {
+    setMessages((current) => current.map((message) => (message.id === id ? { ...message, text } : message)));
   }
 
   async function onLogin(event) {
@@ -129,7 +148,9 @@ export default function App() {
     setError("");
 
     try {
-      const response = await fetch(API_CHAT_PATH, {
+      const assistantMessageId = addMessage("assistant", "");
+
+      const response = await fetch(API_CHAT_STREAM_PATH, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -141,8 +162,8 @@ export default function App() {
         }),
       });
 
-      const data = await parseResponseBody(response);
       if (!response.ok) {
+        const data = await parseResponseBody(response);
         if (response.status === 401) {
           setAccessToken("");
           throw new Error("Session expired. Please login again.");
@@ -150,7 +171,60 @@ export default function App() {
         throw new Error(parseApiError(response.status, data, "Chat request failed."));
       }
 
-      addMessage("assistant", data.response || "No response received.");
+      if (!response.body) {
+        const fallback = await fetch(API_CHAT_PATH, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            prompt,
+            max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
+          }),
+        });
+        const fallbackData = await parseResponseBody(fallback);
+        if (!fallback.ok) {
+          throw new Error(parseApiError(fallback.status, fallbackData, "Chat request failed."));
+        }
+        setMessageText(assistantMessageId, fallbackData.response || "No response received.");
+        return;
+      }
+
+      let assistantText = "";
+      let streamBuffer = "";
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      setMessageText(assistantMessageId, "Thinking...");
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+
+        streamBuffer += decoder.decode(value, { stream: true });
+        const blocks = streamBuffer.split("\n\n");
+        streamBuffer = blocks.pop() || "";
+
+        for (const block of blocks) {
+          const eventPayload = parseSseEvent(block);
+          if (!eventPayload) {
+            continue;
+          }
+          if (eventPayload.error) {
+            throw new Error(eventPayload.error);
+          }
+          if (eventPayload.delta) {
+            assistantText += eventPayload.delta;
+            setMessageText(assistantMessageId, assistantText);
+          }
+        }
+      }
+
+      if (!assistantText.trim()) {
+        setMessageText(assistantMessageId, "No response received.");
+      }
     } catch (err) {
       setError(err.message || "Unexpected error.");
     } finally {
@@ -205,7 +279,6 @@ export default function App() {
               <button type="submit" disabled={authBusy} className="button-primary">
                 {authBusy ? "Logging in..." : "Login"}
               </button>
-              <span className="auth-note">Use your backend `AUTH_USERNAME` and `AUTH_PASSWORD`.</span>
             </div>
           </form>
         ) : (
@@ -222,7 +295,7 @@ export default function App() {
                       <span className="role">{message.role === "user" ? "You" : "Assistant"}</span>
                       <time>{message.createdAt}</time>
                     </header>
-                    <p>{message.text}</p>
+                    <p>{message.text || "..."}</p>
                   </article>
                 ))
               )}
