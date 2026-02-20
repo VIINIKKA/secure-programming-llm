@@ -9,7 +9,7 @@ For implemented controls, see:
 ## 1. Current Priority Order
 
 Given current VM quota constraints, execute remaining work in this order:
-1. Authorization and session hardening (on top of JWT)
+1. External identity integration and stronger credential posture
 2. TLS and ingress hardening
 3. Container/image hardening completion
 4. Security testing depth improvements
@@ -20,16 +20,16 @@ Given current VM quota constraints, execute remaining work in this order:
 ## 2.1 Identity and Access (Highest Priority)
 
 Goal:
-- Extend current JWT implementation to production-grade authz/session security.
+- Move from local JWT/session baseline to externally managed identity and stronger user lifecycle controls.
 
 Recommended target:
-- Add refresh-token rotation, logout/revocation, and role/scope authorization.
+- Integrate IdP-backed auth (OIDC/SSO), support MFA, and remove static local credentials for production.
 
 Minimum acceptance criteria:
-- Refresh endpoint exists with token rotation and revocation checks.
-- Logout endpoint revokes active refresh token chain.
-- Role/scope boundary is enforced at route level.
-- Role/policy boundary is defined at least for admin vs normal user behavior.
+- OIDC/OAuth2 login flow with trusted issuer validation.
+- MFA enabled in identity provider policy.
+- Production secrets/credentials are centrally managed and rotated.
+- Role/scope mappings are sourced from IdP claims (not static env only).
 
 ## 2.2 TLS and Endpoint Exposure
 

@@ -31,7 +31,9 @@ In-scope components:
   - Request timeout (`REQUEST_TIMEOUT_SECONDS`)
   - `backend/app/config.py`, `backend/app/main.py`, `backend/app/llm_service.py`
 - JWT authentication on backend routes (`/auth/login` + bearer token validation on `/api/chat` and `/api/chat/stream`)
-  - `AUTH_USERNAME`, `AUTH_PASSWORD`, `JWT_*`
+- Refresh-session controls with token rotation/revocation (`/auth/refresh`, `/auth/logout`)
+- Scope-based route authorization (`chat:write`, `chat:stream`)
+  - `AUTH_USERNAME`, `AUTH_PASSWORD`, `AUTH_ROLE`, `AUTH_SCOPES`, `JWT_*`
   - `backend/app/auth.py`, `backend/app/main.py`, `.env.example`
 - CORS allowlist controlled by env (`PUBLIC_URL`, optional `ALLOWED_ORIGINS`)
   - `backend/app/config.py`, `backend/app/main.py`
@@ -87,6 +89,7 @@ Repository tests include security-focused coverage:
 - `backend/tests/test_api_auth.py`
 - `backend/tests/test_chat_stream.py`
 - `backend/tests/test_llm_service.py`
+- `backend/tests/test_jwt_auth.py` (refresh replay resistance, logout revocation, scope enforcement)
 
 Typical local verification:
 
@@ -99,7 +102,7 @@ curl -fsS http://localhost:8080/healthz
 
 ## 4. Known Limits of Current Baseline
 
-- Current JWT layer is access-token-only (no refresh/logout/revocation yet).
+- Current auth store is local SQLite session state (not distributed/HA).
 - TLS termination is not defined in this repository by default.
 - Prompt-injection defense is rule/pattern based (not classifier-backed).
 - Container hardening is applied to app services; image pinning/digests are not fully enforced yet.

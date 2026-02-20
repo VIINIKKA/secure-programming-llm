@@ -10,7 +10,14 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from app.auth import create_access_token, is_login_valid, validate_request_auth
+from app.auth import (
+    close_auth_resources,
+    is_login_valid,
+    issue_token_pair,
+    refresh_token_pair,
+    revoke_refresh_session,
+    validate_request_auth,
+)
 from app.config import settings
 from app.llm_service import LLMService
 from app.security import (
@@ -60,8 +67,24 @@ class LoginRequest(BaseModel):
 
 class LoginResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: Literal["bearer"] = "bearer"
     expires_in: int
+    refresh_expires_in: int
+    role: str
+    scopes: list[str]
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(..., min_length=20, max_length=4096)
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str = Field(..., min_length=20, max_length=4096)
+
+
+class StatusResponse(BaseModel):
+    status: str
 
 
 @app.get("/healthz")
@@ -72,6 +95,7 @@ async def healthz() -> dict[str, str]:
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
     await llm_service.aclose()
+    close_auth_resources()
 
 
 @app.post("/auth/login", response_model=LoginResponse)
@@ -81,14 +105,41 @@ async def login(body: LoginRequest, request: Request) -> LoginResponse:
         logger.warning("failed login attempt client=%s user=%s", get_remote_address(request), body.username)
         raise HTTPException(status_code=401, detail="Invalid credentials.")
 
-    token = create_access_token(subject=body.username, settings=settings)
-    expires_in = settings.jwt_access_token_expires_minutes * 60
-    return LoginResponse(access_token=token, expires_in=expires_in)
+    token_pair = issue_token_pair(subject=body.username, settings=settings)
+    return LoginResponse(
+        access_token=token_pair.access_token,
+        refresh_token=token_pair.refresh_token,
+        expires_in=token_pair.expires_in,
+        refresh_expires_in=token_pair.refresh_expires_in,
+        role=token_pair.role,
+        scopes=token_pair.scopes,
+    )
 
 
-def _prepare_chat_context(body: ChatRequest, request: Request) -> dict:
+@app.post("/auth/refresh", response_model=LoginResponse)
+@limiter.limit(settings.rate_limit)
+async def refresh(body: RefreshRequest, request: Request) -> LoginResponse:
+    token_pair = refresh_token_pair(body.refresh_token, settings=settings)
+    return LoginResponse(
+        access_token=token_pair.access_token,
+        refresh_token=token_pair.refresh_token,
+        expires_in=token_pair.expires_in,
+        refresh_expires_in=token_pair.refresh_expires_in,
+        role=token_pair.role,
+        scopes=token_pair.scopes,
+    )
+
+
+@app.post("/auth/logout", response_model=StatusResponse)
+@limiter.limit(settings.rate_limit)
+async def logout(body: LogoutRequest, request: Request) -> StatusResponse:
+    revoke_refresh_session(body.refresh_token, settings=settings)
+    return StatusResponse(status="logged_out")
+
+
+def _prepare_chat_context(body: ChatRequest, request: Request, required_scopes: set[str]) -> dict:
     client_ip = get_remote_address(request)
-    identity = validate_request_auth(request, settings)
+    identity = validate_request_auth(request, settings, required_scopes=required_scopes)
 
     try:
         cleaned = sanitize_input(body.prompt)
@@ -136,7 +187,7 @@ def _prepare_chat_context(body: ChatRequest, request: Request) -> dict:
 @app.post("/api/chat", response_model=ChatResponse)
 @limiter.limit(settings.rate_limit)
 async def chat(body: ChatRequest, request: Request) -> ChatResponse:
-    context = _prepare_chat_context(body, request)
+    context = _prepare_chat_context(body, request, required_scopes={"chat:write"})
 
     llm_response = await llm_service.generate(context["sanitized_input"], context["output_tokens"])
 
@@ -155,7 +206,7 @@ async def chat(body: ChatRequest, request: Request) -> ChatResponse:
 @app.post("/api/chat/stream")
 @limiter.limit(settings.rate_limit)
 async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
-    context = _prepare_chat_context(body, request)
+    context = _prepare_chat_context(body, request, required_scopes={"chat:stream"})
 
     async def stream_events():
         full_response: list[str] = []
