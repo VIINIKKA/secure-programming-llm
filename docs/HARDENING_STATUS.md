@@ -38,7 +38,7 @@ In-scope components:
 
 ### 2.2 Frontend / Reverse Proxy Security
 
-- Same-origin `/api/chat` call path from frontend
+- Same-origin `/api/chat` and `/api/chat/stream` call paths from frontend
   - `frontend/src/App.jsx`
 - Nginx reverse-proxy mediation between frontend and backend
   - `frontend/nginx.conf.template`
@@ -85,6 +85,7 @@ Repository tests include security-focused coverage:
 - `backend/tests/test_security.py`
 - `backend/tests/test_auth.py`
 - `backend/tests/test_api_auth.py`
+- `backend/tests/test_chat_stream.py`
 - `backend/tests/test_llm_service.py`
 
 Typical local verification:

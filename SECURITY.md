@@ -9,7 +9,7 @@ In-scope components:
 - `frontend` (Nginx + React client path to backend)
 - CI checks visible in repository (`Jenkinsfile`, tests)
 
-Primary backend entrypoint:
+Primary backend entrypoints:
 - `POST /api/chat`
 - `POST /api/chat/stream`
 
@@ -54,7 +54,7 @@ Main residual risks:
 - Repository dependency update automation (Dependabot)
   - `.github/dependabot.yml`
 - Integration and unit tests for security-critical behavior
-  - `backend/tests/test_security.py`, `backend/tests/test_auth.py`, `backend/tests/test_api_auth.py`
+  - `backend/tests/test_security.py`, `backend/tests/test_auth.py`, `backend/tests/test_api_auth.py`, `backend/tests/test_chat_stream.py`
 
 ## Verification Checklist
 
