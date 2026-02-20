@@ -59,6 +59,7 @@ Frontend is available at `http://localhost:8080`.
 - Optional API key enforcement (`API_KEY`, header name configurable with `API_KEY_HEADER_NAME`).
 - Strict Pydantic request validation.
 - CORS restricted to configured origins.
+- Container runtime hardening for app services (`read_only`, `no-new-privileges`, capability drop, health checks).
 
 When running through Docker Compose, frontend Nginx forwards `API_KEY` to backend as `X-API-Key` automatically.
 For local Vite dev mode (`npm run dev`), keep `API_KEY` empty unless your client sends the header manually.
@@ -117,3 +118,10 @@ Deploy behavior on each `master-staging` build:
 - SSH to VM and fast-forward pulls `master-staging` in `/home/<ssh-user>/secure-programming-llm`.
 - Executes `docker compose up -d --build --remove-orphans`.
 - Verifies health via `http://localhost:8080/healthz`.
+
+## 8. Repository Hardening
+
+- Dependabot configuration is included in `.github/dependabot.yml` for:
+  - Python dependencies (`/backend`)
+  - Node dependencies (`/frontend`)
+  - Dockerfiles (`/backend`, `/frontend`)
