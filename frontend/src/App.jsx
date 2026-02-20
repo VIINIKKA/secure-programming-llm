@@ -191,10 +191,9 @@ export default function App() {
     setDraft("");
     setBusy(true);
     setError("");
+    const assistantMessageId = addMessage("assistant", "");
 
     try {
-      const assistantMessageId = addMessage("assistant", "");
-
       const executeChatStream = async (token) => {
         const response = await fetch(API_CHAT_STREAM_PATH, {
           method: "POST",
