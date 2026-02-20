@@ -48,6 +48,10 @@ Main residual risks:
   - `backend/app/main.py`, `backend/app/config.py`
 - Optional API key enforcement on `/api/chat`
   - `backend/app/auth.py`, `backend/app/main.py`, `.env.example`
+- Container runtime hardening on app services
+  - `docker-compose.yml`, `backend/Dockerfile`
+- Repository dependency update automation (Dependabot)
+  - `.github/dependabot.yml`
 - Integration and unit tests for security-critical behavior
   - `backend/tests/test_security.py`, `backend/tests/test_auth.py`, `backend/tests/test_api_auth.py`
 
@@ -74,5 +78,5 @@ Pipeline-level checks (from `Jenkinsfile`):
 1. Replace shared API key model with user-level authentication (JWT/OIDC/SSO) and authorization.
 2. Add TLS termination and hardened reverse proxy configuration.
 3. Strengthen prompt-injection defense beyond regex (classifier/rules layering).
-4. Add container runtime hardening (non-root, read-only, capabilities/security opts).
+4. Extend container hardening coverage to all services and pin production image versions/digests.
 5. Expand security testing (integration abuse scenarios, DAST, fuzzing).
