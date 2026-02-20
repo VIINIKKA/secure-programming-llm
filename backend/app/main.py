@@ -35,11 +35,7 @@ app.add_middleware(
     allow_origins=settings.cors_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=list(
-        dict.fromkeys(
-            ["Content-Type", "Authorization", "X-API-Key", settings.api_key_header_name]
-        )
-    ),
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
@@ -73,10 +69,6 @@ async def healthz() -> dict[str, str]:
 @app.post("/auth/login", response_model=LoginResponse)
 @limiter.limit(settings.rate_limit)
 async def login(body: LoginRequest, request: Request) -> LoginResponse:
-    mode = settings.auth_mode.strip().lower()
-    if mode == "api_key":
-        raise HTTPException(status_code=400, detail="JWT authentication is disabled.")
-
     if not is_login_valid(body.username, body.password, settings):
         logger.warning("failed login attempt client=%s user=%s", get_remote_address(request), body.username)
         raise HTTPException(status_code=401, detail="Invalid credentials.")

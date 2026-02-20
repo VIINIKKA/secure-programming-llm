@@ -77,8 +77,6 @@ services:
       context: ./frontend
     container_name: secure-llm-frontend
     restart: unless-stopped
-    environment:
-      API_KEY: ${API_KEY:-}
     depends_on:
       backend:
         condition: service_healthy

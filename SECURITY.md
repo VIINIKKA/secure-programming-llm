@@ -18,7 +18,7 @@ Main threats addressed:
 - Prompt injection attempts
 - Sensitive data disclosure (input/output/logging)
 - Resource abuse (rate limits and token limits)
-- Direct backend misuse (API key and JWT access control)
+- Direct backend misuse (JWT access control)
 
 Main residual risks:
 - No RBAC yet (JWT identifies user but no role-based authorization policy enforced)
@@ -46,9 +46,7 @@ Main residual risks:
   - `backend/app/main.py`
 - CORS allowlist from configuration
   - `backend/app/main.py`, `backend/app/config.py`
-- Optional API key enforcement on `/api/chat`
-  - `backend/app/auth.py`, `backend/app/main.py`, `.env.example`
-- Optional JWT auth on `/auth/login` + bearer token validation for `/api/chat`
+- JWT auth on `/auth/login` + bearer token validation for `/api/chat`
   - `backend/app/auth.py`, `backend/app/main.py`, `.env.example`
 - Container runtime hardening on app services
   - `docker-compose.yml`, `backend/Dockerfile`
@@ -68,7 +66,7 @@ pytest -q backend/tests
 Expected security checks include:
 - prompt sanitization tests
 - PII redaction tests
-- API key required/valid behavior tests
+- JWT login and bearer-token behavior tests
 
 Pipeline-level checks (from `Jenkinsfile`):
 - `bandit -q -r backend/app`

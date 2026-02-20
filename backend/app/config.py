@@ -20,9 +20,6 @@ class Settings(BaseSettings):
     max_output_tokens: int = 256
     rate_limit: str = "10/minute"
 
-    auth_mode: str = "api_key"
-    api_key: str = ""
-    api_key_header_name: str = "X-API-Key"
     auth_username: str = "admin"
     auth_password: str = "change-me"
 
