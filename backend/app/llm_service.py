@@ -28,9 +28,16 @@ class LLMService:
             raise HTTPException(status_code=502, detail="Failed to contact LLM service.") from exc
 
         if response.status_code >= 400:
+            detail = f"LLM service returned status {response.status_code}."
+            try:
+                error_text = str(response.json().get("error", "")).strip()
+                if error_text:
+                    detail = f"{detail} {error_text}"
+            except ValueError:
+                pass
             raise HTTPException(
                 status_code=502,
-                detail=f"LLM service returned status {response.status_code}.",
+                detail=detail,
             )
 
         data = response.json()
