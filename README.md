@@ -29,7 +29,10 @@ Edit `.env` values:
 - `OLLAMA_MODEL` defaults to `llama3.2:3b` (faster on CPU than larger models).
 - `OLLAMA_KEEP_ALIVE` keeps model loaded between requests (default `10m`).
 - `AUTH_USERNAME`/`AUTH_PASSWORD` are used by `/auth/login`.
+- `AUTH_ROLE` and `AUTH_SCOPES` define route-level authorization claims in access tokens.
 - `JWT_SECRET` must be set to a long random value.
+- `JWT_REFRESH_TOKEN_EXPIRES_DAYS` controls refresh-session lifetime.
+- `JWT_SESSION_DB_PATH` controls SQLite-backed refresh-session storage path (set to `/tmp/...` in container runtime).
 
 ## 3. Start the Stack
 
@@ -56,7 +59,8 @@ Frontend is available at `http://localhost:8080`.
 - PII redaction for email, phone, SSN, and card-like numbers before LLM call.
 - Sanitized logging only (no raw PII logging).
 - Rate limiting (`RATE_LIMIT`) and input/output token guardrails.
-- JWT access token flow (`/auth/login`, `Authorization: Bearer <token>`).
+- JWT access token flow with refresh rotation (`/auth/login`, `/auth/refresh`, `/auth/logout`).
+- Scope enforcement on protected endpoints (`chat:write`, `chat:stream`).
 - Streaming chat endpoint (`/api/chat/stream`) for faster time-to-first-token.
 - Strict Pydantic request validation.
 - CORS restricted to configured origins.
@@ -75,6 +79,8 @@ pytest -q backend/tests
 
 - `GET /healthz`
 - `POST /auth/login`
+- `POST /auth/refresh`
+- `POST /auth/logout`
 - `POST /api/chat`
 - `POST /api/chat/stream` (SSE stream)
 
@@ -92,8 +98,28 @@ Login response:
 ```json
 {
   "access_token": "<jwt>",
+  "refresh_token": "<jwt>",
   "token_type": "bearer",
-  "expires_in": 1800
+  "expires_in": 1800,
+  "refresh_expires_in": 604800,
+  "role": "admin",
+  "scopes": ["chat:write", "chat:stream"]
+}
+```
+
+Refresh request:
+
+```json
+{
+  "refresh_token": "<jwt-refresh-token>"
+}
+```
+
+Logout request:
+
+```json
+{
+  "refresh_token": "<jwt-refresh-token>"
 }
 ```
 

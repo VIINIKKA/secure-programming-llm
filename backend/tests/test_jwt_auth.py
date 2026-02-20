@@ -54,6 +54,7 @@ def test_login_and_chat_with_jwt(monkeypatch) -> None:
     )
     assert login_response.status_code == 200
     token = login_response.json()["access_token"]
+    assert login_response.json()["refresh_token"]
 
     chat_response = client.post(
         "/api/chat",
@@ -61,3 +62,82 @@ def test_login_and_chat_with_jwt(monkeypatch) -> None:
         json={"prompt": "hello", "max_output_tokens": 64},
     )
     assert chat_response.status_code == 200
+
+
+def test_refresh_rotates_and_rejects_old_refresh_token(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "auth_username", "alice")
+    monkeypatch.setattr(main.settings, "auth_password", "secret-pass")
+    monkeypatch.setattr(main.settings, "jwt_secret", "test-secret")
+    monkeypatch.setattr(main.settings, "jwt_issuer", "issuer")
+    monkeypatch.setattr(main.settings, "jwt_audience", "audience")
+
+    client = TestClient(main.app)
+    login_response = client.post(
+        "/auth/login",
+        json={"username": "alice", "password": "secret-pass"},
+    )
+    assert login_response.status_code == 200
+    old_refresh = login_response.json()["refresh_token"]
+
+    refresh_response = client.post("/auth/refresh", json={"refresh_token": old_refresh})
+    assert refresh_response.status_code == 200
+    assert refresh_response.json()["refresh_token"] != old_refresh
+
+    replay_response = client.post("/auth/refresh", json={"refresh_token": old_refresh})
+    assert replay_response.status_code == 401
+
+
+def test_logout_revokes_session_for_access_token(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "auth_username", "alice")
+    monkeypatch.setattr(main.settings, "auth_password", "secret-pass")
+    monkeypatch.setattr(main.settings, "jwt_secret", "test-secret")
+    monkeypatch.setattr(main.settings, "jwt_issuer", "issuer")
+    monkeypatch.setattr(main.settings, "jwt_audience", "audience")
+
+    async def fake_generate(_prompt: str, _max_output_tokens: int) -> str:
+        return "ok"
+
+    monkeypatch.setattr(main.llm_service, "generate", fake_generate)
+
+    client = TestClient(main.app)
+    login_response = client.post(
+        "/auth/login",
+        json={"username": "alice", "password": "secret-pass"},
+    )
+    assert login_response.status_code == 200
+    access_token = login_response.json()["access_token"]
+    refresh_token = login_response.json()["refresh_token"]
+
+    logout_response = client.post("/auth/logout", json={"refresh_token": refresh_token})
+    assert logout_response.status_code == 200
+
+    chat_response = client.post(
+        "/api/chat",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={"prompt": "hello", "max_output_tokens": 64},
+    )
+    assert chat_response.status_code == 401
+
+
+def test_stream_requires_chat_stream_scope(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "auth_username", "alice")
+    monkeypatch.setattr(main.settings, "auth_password", "secret-pass")
+    monkeypatch.setattr(main.settings, "auth_scopes", "chat:write")
+    monkeypatch.setattr(main.settings, "jwt_secret", "test-secret")
+    monkeypatch.setattr(main.settings, "jwt_issuer", "issuer")
+    monkeypatch.setattr(main.settings, "jwt_audience", "audience")
+
+    client = TestClient(main.app)
+    login_response = client.post(
+        "/auth/login",
+        json={"username": "alice", "password": "secret-pass"},
+    )
+    assert login_response.status_code == 200
+    access_token = login_response.json()["access_token"]
+
+    stream_response = client.post(
+        "/api/chat/stream",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={"prompt": "hello", "max_output_tokens": 64},
+    )
+    assert stream_response.status_code == 403

@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 const API_CHAT_PATH = "/api/chat";
 const API_CHAT_STREAM_PATH = "/api/chat/stream";
 const API_LOGIN_PATH = "/auth/login";
+const API_REFRESH_PATH = "/auth/refresh";
+const API_LOGOUT_PATH = "/auth/logout";
 const DEFAULT_MAX_OUTPUT_TOKENS = 128;
 
 function parseApiError(status, payload, fallback) {
@@ -46,6 +48,7 @@ export default function App() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [accessToken, setAccessToken] = useState("");
+  const [refreshToken, setRefreshToken] = useState("");
   const [messages, setMessages] = useState([]);
 
   const [draft, setDraft] = useState("");
@@ -108,13 +111,18 @@ export default function App() {
       if (!response.ok) {
         throw new Error(parseApiError(response.status, data, "Login failed."));
       }
+      if (!data.access_token || !data.refresh_token) {
+        throw new Error("Login response was missing token data.");
+      }
 
-      setAccessToken(data.access_token || "");
+      setAccessToken(data.access_token);
+      setRefreshToken(data.refresh_token);
       setPassword("");
       setMessages([]);
       setDraft("");
     } catch (err) {
       setAccessToken("");
+      setRefreshToken("");
       setMessages([]);
       setError(err.message || "Unexpected login error.");
     } finally {
@@ -122,12 +130,49 @@ export default function App() {
     }
   }
 
-  function onLogout() {
+  async function onLogout() {
+    const currentRefresh = refreshToken;
+    if (currentRefresh) {
+      try {
+        await fetch(API_LOGOUT_PATH, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ refresh_token: currentRefresh }),
+        });
+      } catch {
+        // Best-effort logout cleanup on client side.
+      }
+    }
     setAccessToken("");
+    setRefreshToken("");
     setPassword("");
     setMessages([]);
     setDraft("");
     setError("");
+  }
+
+  async function refreshSession(currentRefreshToken) {
+    const response = await fetch(API_REFRESH_PATH, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        refresh_token: currentRefreshToken,
+      }),
+    });
+    const data = await parseResponseBody(response);
+    if (!response.ok) {
+      throw new Error(parseApiError(response.status, data, "Session refresh failed."));
+    }
+    if (!data.access_token || !data.refresh_token) {
+      throw new Error("Session refresh failed.");
+    }
+    setAccessToken(data.access_token);
+    setRefreshToken(data.refresh_token);
+    return data;
   }
 
   async function onSubmit(event) {
@@ -150,75 +195,91 @@ export default function App() {
     try {
       const assistantMessageId = addMessage("assistant", "");
 
-      const response = await fetch(API_CHAT_STREAM_PATH, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          prompt,
-          max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await parseResponseBody(response);
-        if (response.status === 401) {
-          setAccessToken("");
-          throw new Error("Session expired. Please login again.");
-        }
-        throw new Error(parseApiError(response.status, data, "Chat request failed."));
-      }
-
-      if (!response.body) {
-        const fallback = await fetch(API_CHAT_PATH, {
+      const executeChatStream = async (token) => {
+        const response = await fetch(API_CHAT_STREAM_PATH, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             prompt,
             max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
           }),
         });
-        const fallbackData = await parseResponseBody(fallback);
-        if (!fallback.ok) {
-          throw new Error(parseApiError(fallback.status, fallbackData, "Chat request failed."));
+
+        if (!response.ok) {
+          const data = await parseResponseBody(response);
+          const error = new Error(parseApiError(response.status, data, "Chat request failed."));
+          error.statusCode = response.status;
+          throw error;
         }
-        setMessageText(assistantMessageId, fallbackData.response || "No response received.");
-        return;
-      }
+
+        if (!response.body) {
+          const fallback = await fetch(API_CHAT_PATH, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              prompt,
+              max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
+            }),
+          });
+          const fallbackData = await parseResponseBody(fallback);
+          if (!fallback.ok) {
+            const error = new Error(parseApiError(fallback.status, fallbackData, "Chat request failed."));
+            error.statusCode = fallback.status;
+            throw error;
+          }
+          const fallbackText = String(fallbackData.response || "").trim() || "No response received.";
+          setMessageText(assistantMessageId, fallbackText);
+          return fallbackText;
+        }
+
+        let assistantText = "";
+        let streamBuffer = "";
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        setMessageText(assistantMessageId, "Thinking...");
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            break;
+          }
+
+          streamBuffer += decoder.decode(value, { stream: true });
+          const blocks = streamBuffer.split("\n\n");
+          streamBuffer = blocks.pop() || "";
+
+          for (const block of blocks) {
+            const eventPayload = parseSseEvent(block);
+            if (!eventPayload) {
+              continue;
+            }
+            if (eventPayload.error) {
+              throw new Error(eventPayload.error);
+            }
+            if (eventPayload.delta) {
+              assistantText += eventPayload.delta;
+              setMessageText(assistantMessageId, assistantText);
+            }
+          }
+        }
+        return assistantText;
+      };
 
       let assistantText = "";
-      let streamBuffer = "";
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      setMessageText(assistantMessageId, "Thinking...");
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-
-        streamBuffer += decoder.decode(value, { stream: true });
-        const blocks = streamBuffer.split("\n\n");
-        streamBuffer = blocks.pop() || "";
-
-        for (const block of blocks) {
-          const eventPayload = parseSseEvent(block);
-          if (!eventPayload) {
-            continue;
-          }
-          if (eventPayload.error) {
-            throw new Error(eventPayload.error);
-          }
-          if (eventPayload.delta) {
-            assistantText += eventPayload.delta;
-            setMessageText(assistantMessageId, assistantText);
-          }
+      try {
+        assistantText = await executeChatStream(accessToken);
+      } catch (err) {
+        if (err.statusCode === 401 && refreshToken) {
+          const refreshed = await refreshSession(refreshToken);
+          assistantText = await executeChatStream(refreshed.access_token);
+        } else {
+          throw err;
         }
       }
 
@@ -226,6 +287,7 @@ export default function App() {
         setMessageText(assistantMessageId, "No response received.");
       }
     } catch (err) {
+      setMessageText(assistantMessageId, "Request failed.");
       setError(err.message || "Unexpected error.");
     } finally {
       setBusy(false);

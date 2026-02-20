@@ -22,7 +22,7 @@ Main threats addressed:
 - Direct backend misuse (JWT access control)
 
 Main residual risks:
-- No RBAC yet (JWT identifies user but no role-based authorization policy enforced)
+- Single local credential source (no external IdP / MFA / SSO integration)
 - No TLS termination configured in repository by default
 - Limited protection against misinformation and advanced adversarial prompts
 
@@ -48,6 +48,10 @@ Main residual risks:
 - CORS allowlist from configuration
   - `backend/app/main.py`, `backend/app/config.py`
 - JWT auth on `/auth/login` + bearer token validation for `/api/chat` and `/api/chat/stream`
+  - `backend/app/auth.py`, `backend/app/main.py`, `.env.example`
+- Refresh token rotation + session revocation (`/auth/refresh`, `/auth/logout`) with server-side session checks
+  - `backend/app/auth.py`, `backend/app/main.py`
+- Scope-based authorization checks on protected chat routes
   - `backend/app/auth.py`, `backend/app/main.py`, `.env.example`
 - Container runtime hardening on app services
   - `docker-compose.yml`, `backend/Dockerfile`
@@ -76,7 +80,7 @@ Pipeline-level checks (from `Jenkinsfile`):
 
 ## Known Gaps and Future Work
 
-1. Add refresh-token flow and role-based authorization (current JWT implementation is access-token-only).
+1. Integrate external identity provider and stronger login policy (MFA/SSO/password hash lifecycle).
 2. Add TLS termination and hardened reverse proxy configuration.
 3. Strengthen prompt-injection defense beyond regex (classifier/rules layering).
 4. Extend container hardening coverage to all services and pin production image versions/digests.

@@ -81,6 +81,7 @@ temp/
 *.swo
 *.pid
 *.seed
+data/
 
 # -----------------------------
 # Docker / containers

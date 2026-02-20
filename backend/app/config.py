@@ -23,12 +23,17 @@ class Settings(BaseSettings):
 
     auth_username: str = "admin"
     auth_password: str = "change-me"
+    auth_role: str = "admin"
+    auth_scopes: str = "chat:write chat:stream"
 
     jwt_secret: str = "change-me-jwt-secret"
     jwt_algorithm: str = "HS256"
     jwt_issuer: str = "secure-llm-backend"
     jwt_audience: str = "secure-llm-frontend"
     jwt_access_token_expires_minutes: int = 30
+    jwt_refresh_token_expires_days: int = 7
+    jwt_session_db_path: str = "data/auth_sessions.db"
+    jwt_clock_skew_seconds: int = 30
 
     redact_pii: bool = True
     block_prompt_injection: bool = True
