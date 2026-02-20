@@ -7,7 +7,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from app.auth import is_api_key_valid
+from app.auth import create_access_token, is_login_valid, validate_request_auth
 from app.config import settings
 from app.llm_service import LLMService
 from app.security import (
@@ -54,9 +54,36 @@ class ChatResponse(BaseModel):
     input_tokens: int
 
 
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=200)
+    password: str = Field(..., min_length=1, max_length=200)
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str
+    expires_in: int
+
+
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/auth/login", response_model=LoginResponse)
+@limiter.limit(settings.rate_limit)
+async def login(body: LoginRequest, request: Request) -> LoginResponse:
+    mode = settings.auth_mode.strip().lower()
+    if mode == "api_key":
+        raise HTTPException(status_code=400, detail="JWT authentication is disabled.")
+
+    if not is_login_valid(body.username, body.password, settings):
+        logger.warning("failed login attempt client=%s user=%s", get_remote_address(request), body.username)
+        raise HTTPException(status_code=401, detail="Invalid credentials.")
+
+    token = create_access_token(subject=body.username, settings=settings)
+    expires_in = settings.jwt_access_token_expires_minutes * 60
+    return LoginResponse(access_token=token, token_type="bearer", expires_in=expires_in)
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -64,12 +91,7 @@ async def healthz() -> dict[str, str]:
 async def chat(body: ChatRequest, request: Request) -> ChatResponse:
     client_ip = get_remote_address(request)
 
-    if not is_api_key_valid(
-        request.headers.get(settings.api_key_header_name),
-        settings.api_key,
-    ):
-        logger.warning("unauthorized chat request client=%s", client_ip)
-        raise HTTPException(status_code=401, detail="Unauthorized.")
+    identity = validate_request_auth(request, settings)
 
     try:
         cleaned = sanitize_input(body.prompt)
@@ -97,8 +119,10 @@ async def chat(body: ChatRequest, request: Request) -> ChatResponse:
         )
 
     logger.info(
-        "chat request accepted client=%s tokens=%s pii_redacted=%s",
+        "chat request accepted client=%s subject=%s auth=%s tokens=%s pii_redacted=%s",
         client_ip,
+        identity.subject,
+        identity.auth_type,
         token_count,
         pii_redacted,
     )

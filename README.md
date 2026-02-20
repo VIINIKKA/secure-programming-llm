@@ -27,7 +27,9 @@ cp .env.example .env
 Edit `.env` values:
 - `PUBLIC_URL` should match your frontend URL on the VM (for example `http://<floating-ip>:8080`).
 - `OLLAMA_MODEL` defaults to `mistral`.
-- `API_KEY` is optional. When set, backend requires API key for `/api/chat`.
+- `AUTH_MODE` supports `api_key`, `jwt`, or `hybrid`.
+- `API_KEY` is used when auth mode allows API key access.
+- `AUTH_USERNAME`/`AUTH_PASSWORD` are used by `/auth/login` when auth mode includes JWT.
 
 ## 3. Start the Stack
 
@@ -57,6 +59,7 @@ Frontend is available at `http://localhost:8080`.
 - Sanitized logging only (no raw PII logging).
 - Rate limiting (`RATE_LIMIT`) and input/output token guardrails.
 - Optional API key enforcement (`API_KEY`, header name configurable with `API_KEY_HEADER_NAME`).
+- Optional JWT access token flow (`/auth/login`, `Authorization: Bearer <token>`).
 - Strict Pydantic request validation.
 - CORS restricted to configured origins.
 - Container runtime hardening for app services (`read_only`, `no-new-privileges`, capability drop, health checks).
@@ -76,7 +79,27 @@ pytest -q backend/tests
 ## 6. API Contract
 
 - `GET /healthz`
+- `POST /auth/login`
 - `POST /api/chat`
+
+Login request (JWT mode):
+
+```json
+{
+  "username": "admin",
+  "password": "change-me"
+}
+```
+
+Login response:
+
+```json
+{
+  "access_token": "<jwt>",
+  "token_type": "bearer",
+  "expires_in": 1800
+}
+```
 
 Request:
 

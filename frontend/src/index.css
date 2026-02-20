@@ -47,6 +47,14 @@ form {
   gap: 10px;
 }
 
+input {
+  width: 100%;
+  border: 1px solid #bfcbda;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+}
+
 textarea {
   width: 100%;
   min-height: 180px;
@@ -70,6 +78,23 @@ button {
 button:disabled {
   opacity: 0.7;
   cursor: wait;
+}
+
+.auth-form {
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.auth-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.auth-ok {
+  color: #0f766e;
+  font-weight: 600;
 }
 
 .error {
