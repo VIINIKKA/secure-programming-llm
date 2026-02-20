@@ -7,6 +7,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+from app.auth import is_api_key_valid
 from app.config import settings
 from app.llm_service import LLMService
 from app.security import (
@@ -34,7 +35,11 @@ app.add_middleware(
     allow_origins=settings.cors_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=list(
+        dict.fromkeys(
+            ["Content-Type", "Authorization", "X-API-Key", settings.api_key_header_name]
+        )
+    ),
 )
 
 
@@ -57,12 +62,19 @@ async def healthz() -> dict[str, str]:
 @app.post("/api/chat", response_model=ChatResponse)
 @limiter.limit(settings.rate_limit)
 async def chat(body: ChatRequest, request: Request) -> ChatResponse:
+    client_ip = get_remote_address(request)
+
+    if not is_api_key_valid(
+        request.headers.get(settings.api_key_header_name),
+        settings.api_key,
+    ):
+        logger.warning("unauthorized chat request client=%s", client_ip)
+        raise HTTPException(status_code=401, detail="Unauthorized.")
+
     try:
         cleaned = sanitize_input(body.prompt)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    client_ip = get_remote_address(request)
 
     if settings.block_prompt_injection and is_prompt_injection(cleaned):
         logger.warning(

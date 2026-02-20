@@ -27,6 +27,7 @@ cp .env.example .env
 Edit `.env` values:
 - `PUBLIC_URL` should match your frontend URL on the VM (for example `http://<floating-ip>:8080`).
 - `OLLAMA_MODEL` defaults to `mistral`.
+- `API_KEY` is optional. When set, backend requires API key for `/api/chat`.
 
 ## 3. Start the Stack
 
@@ -55,8 +56,12 @@ Frontend is available at `http://localhost:8080`.
 - PII redaction for email, phone, SSN, and card-like numbers before LLM call.
 - Sanitized logging only (no raw PII logging).
 - Rate limiting (`RATE_LIMIT`) and input/output token guardrails.
+- Optional API key enforcement (`API_KEY`, header name configurable with `API_KEY_HEADER_NAME`).
 - Strict Pydantic request validation.
 - CORS restricted to configured origins.
+
+When running through Docker Compose, frontend Nginx forwards `API_KEY` to backend as `X-API-Key` automatically.
+For local Vite dev mode (`npm run dev`), keep `API_KEY` empty unless your client sends the header manually.
 
 ## 5. Backend Local Test Command
 
@@ -79,6 +84,12 @@ Request:
   "prompt": "Your question",
   "max_output_tokens": 256
 }
+```
+
+Optional request header when API key is enabled:
+
+```text
+X-API-Key: <your-api-key>
 ```
 
 Response:

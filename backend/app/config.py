@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     max_input_tokens: int = 1024
     max_output_tokens: int = 256
     rate_limit: str = "10/minute"
+    api_key: str = ""
+    api_key_header_name: str = "X-API-Key"
 
     redact_pii: bool = True
     block_prompt_injection: bool = True
