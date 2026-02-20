@@ -11,6 +11,7 @@ In-scope components:
 
 Primary backend entrypoint:
 - `POST /api/chat`
+- `POST /api/chat/stream`
 
 ## Threat Model (Current)
 
@@ -46,7 +47,7 @@ Main residual risks:
   - `backend/app/main.py`
 - CORS allowlist from configuration
   - `backend/app/main.py`, `backend/app/config.py`
-- JWT auth on `/auth/login` + bearer token validation for `/api/chat`
+- JWT auth on `/auth/login` + bearer token validation for `/api/chat` and `/api/chat/stream`
   - `backend/app/auth.py`, `backend/app/main.py`, `.env.example`
 - Container runtime hardening on app services
   - `docker-compose.yml`, `backend/Dockerfile`

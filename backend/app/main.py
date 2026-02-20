@@ -1,8 +1,10 @@
 import logging
+import json
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -67,6 +69,11 @@ async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.on_event("shutdown")
+async def shutdown_event() -> None:
+    await llm_service.aclose()
+
+
 @app.post("/auth/login", response_model=LoginResponse)
 @limiter.limit(settings.rate_limit)
 async def login(body: LoginRequest, request: Request) -> LoginResponse:
@@ -79,11 +86,8 @@ async def login(body: LoginRequest, request: Request) -> LoginResponse:
     return LoginResponse(access_token=token, expires_in=expires_in)
 
 
-@app.post("/api/chat", response_model=ChatResponse)
-@limiter.limit(settings.rate_limit)
-async def chat(body: ChatRequest, request: Request) -> ChatResponse:
+def _prepare_chat_context(body: ChatRequest, request: Request) -> dict:
     client_ip = get_remote_address(request)
-
     identity = validate_request_auth(request, settings)
 
     try:
@@ -120,16 +124,77 @@ async def chat(body: ChatRequest, request: Request) -> ChatResponse:
         pii_redacted,
     )
 
-    output_tokens = body.max_output_tokens or settings.max_output_tokens
-    llm_response = await llm_service.generate(sanitized_input, output_tokens)
+    return {
+        "client_ip": client_ip,
+        "sanitized_input": sanitized_input,
+        "token_count": token_count,
+        "pii_redacted": pii_redacted,
+        "output_tokens": body.max_output_tokens or settings.max_output_tokens,
+    }
+
+
+@app.post("/api/chat", response_model=ChatResponse)
+@limiter.limit(settings.rate_limit)
+async def chat(body: ChatRequest, request: Request) -> ChatResponse:
+    context = _prepare_chat_context(body, request)
+
+    llm_response = await llm_service.generate(context["sanitized_input"], context["output_tokens"])
 
     safe_response = llm_response
     if settings.redact_pii:
         safe_response, _ = redact_pii(safe_response)
 
-    logger.info("chat response delivered client=%s chars=%s", client_ip, len(safe_response))
+    logger.info("chat response delivered client=%s chars=%s", context["client_ip"], len(safe_response))
     return ChatResponse(
         response=safe_response,
-        pii_redacted=pii_redacted,
-        input_tokens=token_count,
+        pii_redacted=context["pii_redacted"],
+        input_tokens=context["token_count"],
+    )
+
+
+@app.post("/api/chat/stream")
+@limiter.limit(settings.rate_limit)
+async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
+    context = _prepare_chat_context(body, request)
+
+    async def stream_events():
+        full_response: list[str] = []
+        try:
+            async for chunk in llm_service.generate_stream(context["sanitized_input"], context["output_tokens"]):
+                full_response.append(chunk)
+                # Best-effort redaction per chunk; whole-response redaction is still performed for summary metadata.
+                safe_chunk = chunk
+                if settings.redact_pii:
+                    safe_chunk, _ = redact_pii(safe_chunk)
+                if safe_chunk:
+                    yield f"data: {json.dumps({'delta': safe_chunk})}\n\n"
+        except HTTPException as exc:
+            yield f"data: {json.dumps({'error': str(exc.detail)})}\n\n"
+            return
+
+        combined = "".join(full_response)
+        if settings.redact_pii:
+            combined, _ = redact_pii(combined)
+
+        logger.info("chat stream delivered client=%s chars=%s", context["client_ip"], len(combined))
+        yield (
+            "data: "
+            + json.dumps(
+                {
+                    "done": True,
+                    "input_tokens": context["token_count"],
+                    "pii_redacted": context["pii_redacted"],
+                }
+            )
+            + "\n\n"
+        )
+
+    return StreamingResponse(
+        stream_events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )

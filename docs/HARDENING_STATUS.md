@@ -30,7 +30,7 @@ In-scope components:
   - Output token cap (`MAX_OUTPUT_TOKENS`)
   - Request timeout (`REQUEST_TIMEOUT_SECONDS`)
   - `backend/app/config.py`, `backend/app/main.py`, `backend/app/llm_service.py`
-- JWT authentication on backend routes (`/auth/login` + bearer token validation on `/api/chat`)
+- JWT authentication on backend routes (`/auth/login` + bearer token validation on `/api/chat` and `/api/chat/stream`)
   - `AUTH_USERNAME`, `AUTH_PASSWORD`, `JWT_*`
   - `backend/app/auth.py`, `backend/app/main.py`, `.env.example`
 - CORS allowlist controlled by env (`PUBLIC_URL`, optional `ALLOWED_ORIGINS`)
@@ -64,6 +64,7 @@ In-scope components:
 - `ollama-init` bootstrap is wired into compose lifecycle so model pull happens before backend depends on it.
 - Backend startup depends on healthy `ollama` and successful `ollama-init`.
 - Backend 502 now includes upstream Ollama error text to speed incident diagnosis.
+- Backend uses persistent HTTP connection pooling to Ollama and passes `keep_alive` to keep model warm.
   - `docker-compose.yml`
   - `backend/app/llm_service.py`
 
