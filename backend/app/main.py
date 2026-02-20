@@ -1,4 +1,5 @@
 import logging
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,7 +58,7 @@ class LoginRequest(BaseModel):
 
 class LoginResponse(BaseModel):
     access_token: str
-    token_type: str
+    token_type: Literal["bearer"] = "bearer"
     expires_in: int
 
 
@@ -75,7 +76,7 @@ async def login(body: LoginRequest, request: Request) -> LoginResponse:
 
     token = create_access_token(subject=body.username, settings=settings)
     expires_in = settings.jwt_access_token_expires_minutes * 60
-    return LoginResponse(access_token=token, token_type="bearer", expires_in=expires_in)
+    return LoginResponse(access_token=token, expires_in=expires_in)
 
 
 @app.post("/api/chat", response_model=ChatResponse)
