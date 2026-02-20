@@ -3,30 +3,38 @@ from fastapi.testclient import TestClient
 from app import main
 
 
-def test_login_disabled_when_auth_mode_is_api_key(monkeypatch) -> None:
-    monkeypatch.setattr(main.settings, "auth_mode", "api_key")
-
+def test_login_rejects_invalid_credentials(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "auth_username", "admin")
+    monkeypatch.setattr(main.settings, "auth_password", "correct-password")
     client = TestClient(main.app)
     response = client.post(
         "/auth/login",
-        json={"username": "admin", "password": "change-me"},
+        json={"username": "admin", "password": "wrong-password"},
     )
-    assert response.status_code == 400
+    assert response.status_code == 401
 
 
-def test_chat_requires_bearer_token_in_jwt_mode(monkeypatch) -> None:
-    monkeypatch.setattr(main.settings, "auth_mode", "jwt")
-    monkeypatch.setattr(main.settings, "jwt_secret", "test-secret")
-    monkeypatch.setattr(main.settings, "jwt_issuer", "issuer")
-    monkeypatch.setattr(main.settings, "jwt_audience", "audience")
-
+def test_chat_requires_bearer_token() -> None:
     client = TestClient(main.app)
     response = client.post("/api/chat", json={"prompt": "hello", "max_output_tokens": 64})
     assert response.status_code == 401
 
 
-def test_login_and_chat_in_jwt_mode(monkeypatch) -> None:
-    monkeypatch.setattr(main.settings, "auth_mode", "jwt")
+def test_chat_rejects_invalid_bearer_token(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "jwt_secret", "test-secret")
+    monkeypatch.setattr(main.settings, "jwt_issuer", "issuer")
+    monkeypatch.setattr(main.settings, "jwt_audience", "audience")
+
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/chat",
+        headers={"Authorization": "Bearer definitely-invalid-token"},
+        json={"prompt": "hello", "max_output_tokens": 64},
+    )
+    assert response.status_code == 401
+
+
+def test_login_and_chat_with_jwt(monkeypatch) -> None:
     monkeypatch.setattr(main.settings, "auth_username", "alice")
     monkeypatch.setattr(main.settings, "auth_password", "secret-pass")
     monkeypatch.setattr(main.settings, "jwt_secret", "test-secret")
@@ -53,21 +61,3 @@ def test_login_and_chat_in_jwt_mode(monkeypatch) -> None:
         json={"prompt": "hello", "max_output_tokens": 64},
     )
     assert chat_response.status_code == 200
-
-
-def test_hybrid_mode_accepts_api_key(monkeypatch) -> None:
-    monkeypatch.setattr(main.settings, "auth_mode", "hybrid")
-    monkeypatch.setattr(main.settings, "api_key", "top-secret")
-
-    async def fake_generate(_prompt: str, _max_output_tokens: int) -> str:
-        return "ok"
-
-    monkeypatch.setattr(main.llm_service, "generate", fake_generate)
-
-    client = TestClient(main.app)
-    response = client.post(
-        "/api/chat",
-        headers={"X-API-Key": "top-secret"},
-        json={"prompt": "hello", "max_output_tokens": 64},
-    )
-    assert response.status_code == 200

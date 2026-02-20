@@ -30,8 +30,8 @@ In-scope components:
   - Output token cap (`MAX_OUTPUT_TOKENS`)
   - Request timeout (`REQUEST_TIMEOUT_SECONDS`)
   - `backend/app/config.py`, `backend/app/main.py`, `backend/app/llm_service.py`
-- Optional API key enforcement (header-based)
-  - `API_KEY`, `API_KEY_HEADER_NAME`
+- JWT authentication on backend routes (`/auth/login` + bearer token validation on `/api/chat`)
+  - `AUTH_USERNAME`, `AUTH_PASSWORD`, `JWT_*`
   - `backend/app/auth.py`, `backend/app/main.py`, `.env.example`
 - CORS allowlist controlled by env (`PUBLIC_URL`, optional `ALLOWED_ORIGINS`)
   - `backend/app/config.py`, `backend/app/main.py`
@@ -42,8 +42,8 @@ In-scope components:
   - `frontend/src/App.jsx`
 - Nginx reverse-proxy mediation between frontend and backend
   - `frontend/nginx.conf.template`
-- API key propagation from frontend container env to backend header (when enabled)
-  - `frontend/nginx.conf.template`, `docker-compose.yml`
+- Authorization header forwarding from frontend to backend
+  - `frontend/nginx.conf.template`
 
 ### 2.3 Container Runtime Hardening
 
@@ -97,7 +97,7 @@ curl -fsS http://localhost:8080/healthz
 
 ## 4. Known Limits of Current Baseline
 
-- API key is a shared secret, not user-level identity/authorization.
+- Current JWT layer is access-token-only (no refresh/logout/revocation yet).
 - TLS termination is not defined in this repository by default.
 - Prompt-injection defense is rule/pattern based (not classifier-backed).
 - Container hardening is applied to app services; image pinning/digests are not fully enforced yet.

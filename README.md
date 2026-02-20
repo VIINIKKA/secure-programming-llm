@@ -27,9 +27,8 @@ cp .env.example .env
 Edit `.env` values:
 - `PUBLIC_URL` should match your frontend URL on the VM (for example `http://<floating-ip>:8080`).
 - `OLLAMA_MODEL` defaults to `mistral`.
-- `AUTH_MODE` supports `api_key`, `jwt`, or `hybrid`.
-- `API_KEY` is used when auth mode allows API key access.
-- `AUTH_USERNAME`/`AUTH_PASSWORD` are used by `/auth/login` when auth mode includes JWT.
+- `AUTH_USERNAME`/`AUTH_PASSWORD` are used by `/auth/login`.
+- `JWT_SECRET` must be set to a long random value.
 
 ## 3. Start the Stack
 
@@ -37,11 +36,9 @@ Edit `.env` values:
 docker compose up -d --build
 ```
 
-Pull model once (recommended):
-
-```bash
-docker compose --profile init up ollama-init
-```
+Model bootstrap note:
+- `ollama-init` runs automatically and ensures `OLLAMA_MODEL` is present before backend startup.
+- If the model already exists in the `ollama_data` volume, it exits quickly.
 
 Then verify:
 
@@ -58,14 +55,10 @@ Frontend is available at `http://localhost:8080`.
 - PII redaction for email, phone, SSN, and card-like numbers before LLM call.
 - Sanitized logging only (no raw PII logging).
 - Rate limiting (`RATE_LIMIT`) and input/output token guardrails.
-- Optional API key enforcement (`API_KEY`, header name configurable with `API_KEY_HEADER_NAME`).
-- Optional JWT access token flow (`/auth/login`, `Authorization: Bearer <token>`).
+- JWT access token flow (`/auth/login`, `Authorization: Bearer <token>`).
 - Strict Pydantic request validation.
 - CORS restricted to configured origins.
 - Container runtime hardening for app services (`read_only`, `no-new-privileges`, capability drop, health checks).
-
-When running through Docker Compose, frontend Nginx forwards `API_KEY` to backend as `X-API-Key` automatically.
-For local Vite dev mode (`npm run dev`), keep `API_KEY` empty unless your client sends the header manually.
 
 ## 5. Backend Local Test Command
 
@@ -110,10 +103,10 @@ Request:
 }
 ```
 
-Optional request header when API key is enabled:
+Required request header:
 
 ```text
-X-API-Key: <your-api-key>
+Authorization: Bearer <jwt-access-token>
 ```
 
 Response:

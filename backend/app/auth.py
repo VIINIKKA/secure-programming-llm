@@ -9,13 +9,6 @@ from jwt import InvalidTokenError
 
 from app.config import Settings
 
-def is_api_key_valid(provided_key: str | None, expected_key: str) -> bool:
-    if not expected_key:
-        return True
-    if not provided_key:
-        return False
-    return secrets.compare_digest(provided_key, expected_key)
-
 
 @dataclass(frozen=True)
 class AuthIdentity:
@@ -80,31 +73,4 @@ def validate_bearer_token(request: Request, settings: Settings) -> AuthIdentity:
 
 
 def validate_request_auth(request: Request, settings: Settings) -> AuthIdentity:
-    mode = settings.auth_mode.strip().lower()
-
-    if mode not in {"api_key", "jwt", "hybrid"}:
-        raise HTTPException(status_code=500, detail="Invalid auth mode configuration.")
-
-    if mode == "api_key":
-        if not is_api_key_valid(
-            request.headers.get(settings.api_key_header_name),
-            settings.api_key,
-        ):
-            raise HTTPException(status_code=401, detail="Unauthorized.")
-        return AuthIdentity(subject="api-key-client", auth_type="api_key")
-
-    if mode == "jwt":
-        return validate_bearer_token(request, settings)
-
-    # hybrid mode: allow either valid JWT or valid API key.
-    bearer_token = extract_bearer_token(request)
-    if bearer_token:
-        return validate_bearer_token(request, settings)
-
-    if is_api_key_valid(
-        request.headers.get(settings.api_key_header_name),
-        settings.api_key,
-    ):
-        return AuthIdentity(subject="api-key-client", auth_type="api_key")
-
-    raise HTTPException(status_code=401, detail="Unauthorized.")
+    return validate_bearer_token(request, settings)

@@ -9,7 +9,7 @@ For implemented controls, see:
 ## 1. Current Priority Order
 
 Given current VM quota constraints, execute remaining work in this order:
-1. Authentication and authorization upgrade
+1. Authorization and session hardening (on top of JWT)
 2. TLS and ingress hardening
 3. Container/image hardening completion
 4. Security testing depth improvements
@@ -20,15 +20,15 @@ Given current VM quota constraints, execute remaining work in this order:
 ## 2.1 Identity and Access (Highest Priority)
 
 Goal:
-- Replace shared API key model with user-based authentication and authorization.
+- Extend current JWT implementation to production-grade authz/session security.
 
 Recommended target:
-- JWT-based auth first (or OIDC if identity provider is available).
+- Add refresh-token rotation, logout/revocation, and role/scope authorization.
 
 Minimum acceptance criteria:
-- Login flow exists (frontend + backend integration).
-- Per-user identity appears in backend request context/logs.
-- Unauthorized access to `/api/chat` is blocked by token auth.
+- Refresh endpoint exists with token rotation and revocation checks.
+- Logout endpoint revokes active refresh token chain.
+- Role/scope boundary is enforced at route level.
 - Role/policy boundary is defined at least for admin vs normal user behavior.
 
 ## 2.2 TLS and Endpoint Exposure
@@ -81,9 +81,9 @@ Minimum acceptance criteria:
 
 ## 3. Recommended Implementation Plan (Practical Sequence)
 
-1. Create feature branch for auth work (`work/auth-hardening`).
-2. Implement JWT auth (backend middleware/dependency + frontend token handling).
-3. Add integration tests for auth and error paths.
+1. Create feature branch for authz/session work (`work/jwt-authz`).
+2. Implement refresh token + logout/revocation flow.
+3. Add role/scope checks and integration tests for auth paths.
 4. Create branch for TLS/reverse proxy (`work/tls-ingress`).
 5. Add DAST stage after functional tests pass.
 6. Finalize image pinning and hardening exception notes.
