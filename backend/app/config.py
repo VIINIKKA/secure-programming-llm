@@ -19,8 +19,18 @@ class Settings(BaseSettings):
     max_input_tokens: int = 1024
     max_output_tokens: int = 256
     rate_limit: str = "10/minute"
+
+    auth_mode: str = "api_key"
     api_key: str = ""
     api_key_header_name: str = "X-API-Key"
+    auth_username: str = "admin"
+    auth_password: str = "change-me"
+
+    jwt_secret: str = "change-me-jwt-secret"
+    jwt_algorithm: str = "HS256"
+    jwt_issuer: str = "secure-llm-backend"
+    jwt_audience: str = "secure-llm-frontend"
+    jwt_access_token_expires_minutes: int = 30
 
     redact_pii: bool = True
     block_prompt_injection: bool = True

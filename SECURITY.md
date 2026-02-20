@@ -18,10 +18,10 @@ Main threats addressed:
 - Prompt injection attempts
 - Sensitive data disclosure (input/output/logging)
 - Resource abuse (rate limits and token limits)
-- Direct backend misuse (optional API key control)
+- Direct backend misuse (API key and JWT access control)
 
 Main residual risks:
-- No end-user identity or RBAC (API key is shared-secret gate, not user auth)
+- No RBAC yet (JWT identifies user but no role-based authorization policy enforced)
 - No TLS termination configured in repository by default
 - Limited protection against misinformation and advanced adversarial prompts
 
@@ -47,6 +47,8 @@ Main residual risks:
 - CORS allowlist from configuration
   - `backend/app/main.py`, `backend/app/config.py`
 - Optional API key enforcement on `/api/chat`
+  - `backend/app/auth.py`, `backend/app/main.py`, `.env.example`
+- Optional JWT auth on `/auth/login` + bearer token validation for `/api/chat`
   - `backend/app/auth.py`, `backend/app/main.py`, `.env.example`
 - Container runtime hardening on app services
   - `docker-compose.yml`, `backend/Dockerfile`
@@ -75,7 +77,7 @@ Pipeline-level checks (from `Jenkinsfile`):
 
 ## Known Gaps and Future Work
 
-1. Replace shared API key model with user-level authentication (JWT/OIDC/SSO) and authorization.
+1. Add refresh-token flow and role-based authorization (current JWT implementation is access-token-only).
 2. Add TLS termination and hardened reverse proxy configuration.
 3. Strengthen prompt-injection defense beyond regex (classifier/rules layering).
 4. Extend container hardening coverage to all services and pin production image versions/digests.
