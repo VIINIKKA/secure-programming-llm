@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import secrets
 import sqlite3
@@ -13,6 +14,11 @@ from fastapi import HTTPException, Request
 from jwt import InvalidTokenError
 
 from app.config import Settings
+
+USERNAME_ALLOWED = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+PASSWORD_HASH_ALGORITHM = "pbkdf2_sha256"
+PASSWORD_HASH_ITERATIONS = 240_000
+PASSWORD_SALT_BYTES = 16
 
 
 @dataclass(frozen=True)
@@ -43,9 +49,69 @@ class SessionRecord:
     expires_at: int
 
 
+@dataclass(frozen=True)
+class UserRecord:
+    username: str
+    role: str
+    scopes: list[str]
+
+
 def _parse_scopes(value: str) -> list[str]:
     cleaned = value.replace(",", " ").split()
     return sorted({scope.strip() for scope in cleaned if scope.strip()})
+
+
+def _serialize_scopes(scopes: list[str]) -> str:
+    return " ".join(sorted({scope.strip() for scope in scopes if scope.strip()}))
+
+
+def normalize_username(username: str) -> str:
+    cleaned = username.strip()
+    if len(cleaned) < 3 or len(cleaned) > 64:
+        raise ValueError("Username must be between 3 and 64 characters.")
+    if any(char not in USERNAME_ALLOWED for char in cleaned):
+        raise ValueError("Username contains unsupported characters.")
+    return cleaned.lower()
+
+
+def _validate_password_policy(password: str, settings: Settings) -> None:
+    min_len = max(8, settings.auth_min_password_length)
+    if len(password) < min_len:
+        raise ValueError(f"Password must be at least {min_len} characters.")
+    if not any(char.isalpha() for char in password):
+        raise ValueError("Password must include at least one letter.")
+    if not any(char.isdigit() for char in password):
+        raise ValueError("Password must include at least one number.")
+
+
+def _b64_encode(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _b64_decode(value: str) -> bytes:
+    padding = "=" * ((4 - (len(value) % 4)) % 4)
+    return base64.urlsafe_b64decode(f"{value}{padding}")
+
+
+def _hash_password(password: str) -> str:
+    salt = secrets.token_bytes(PASSWORD_SALT_BYTES)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_HASH_ITERATIONS)
+    return f"{PASSWORD_HASH_ALGORITHM}${PASSWORD_HASH_ITERATIONS}${_b64_encode(salt)}${_b64_encode(digest)}"
+
+
+def _verify_password(password: str, stored_hash: str) -> bool:
+    try:
+        algorithm, iterations_raw, salt_raw, expected_raw = stored_hash.split("$", 3)
+        if algorithm != PASSWORD_HASH_ALGORITHM:
+            return False
+        iterations = int(iterations_raw)
+        salt = _b64_decode(salt_raw)
+        expected = _b64_decode(expected_raw)
+    except (ValueError, TypeError):
+        return False
+
+    actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return secrets.compare_digest(actual, expected)
 
 
 def _token_hash(token_id: str) -> str:
@@ -91,13 +157,26 @@ class SessionStore:
                 ON sessions(subject)
                 """
             )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    username TEXT PRIMARY KEY COLLATE NOCASE,
+                    password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    scopes TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    disabled_at INTEGER
+                )
+                """
+            )
 
     def close(self) -> None:
         with self._lock:
             self._conn.close()
 
     @staticmethod
-    def _deserialize(row: sqlite3.Row) -> SessionRecord:
+    def _deserialize_session(row: sqlite3.Row) -> SessionRecord:
         scopes = [scope for scope in str(row["scopes"]).split(" ") if scope]
         return SessionRecord(
             session_id=str(row["session_id"]),
@@ -106,6 +185,84 @@ class SessionStore:
             scopes=scopes,
             expires_at=int(row["expires_at"]),
         )
+
+    @staticmethod
+    def _deserialize_user(row: sqlite3.Row) -> UserRecord:
+        scopes = [scope for scope in str(row["scopes"]).split(" ") if scope]
+        return UserRecord(
+            username=str(row["username"]),
+            role=str(row["role"]),
+            scopes=scopes,
+        )
+
+    def upsert_user(self, username: str, password: str, role: str, scopes: list[str]) -> None:
+        now_ts = int(_now_utc().timestamp())
+        serialized_scopes = _serialize_scopes(scopes)
+        password_hash = _hash_password(password)
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO users(username, password_hash, role, scopes, created_at, updated_at, disabled_at)
+                VALUES (?, ?, ?, ?, ?, ?, NULL)
+                ON CONFLICT(username) DO UPDATE SET
+                    password_hash = excluded.password_hash,
+                    role = excluded.role,
+                    scopes = excluded.scopes,
+                    updated_at = excluded.updated_at,
+                    disabled_at = NULL
+                """,
+                (username, password_hash, role, serialized_scopes, now_ts, now_ts),
+            )
+
+    def create_user(self, username: str, password: str, role: str, scopes: list[str]) -> UserRecord | None:
+        now_ts = int(_now_utc().timestamp())
+        serialized_scopes = _serialize_scopes(scopes)
+        password_hash = _hash_password(password)
+        with self._lock, self._conn:
+            existing = self._conn.execute(
+                "SELECT username FROM users WHERE username = ?",
+                (username,),
+            ).fetchone()
+            if existing:
+                return None
+
+            self._conn.execute(
+                """
+                INSERT INTO users(username, password_hash, role, scopes, created_at, updated_at, disabled_at)
+                VALUES (?, ?, ?, ?, ?, ?, NULL)
+                """,
+                (username, password_hash, role, serialized_scopes, now_ts, now_ts),
+            )
+            row = self._conn.execute(
+                """
+                SELECT username, role, scopes
+                FROM users
+                WHERE username = ? AND disabled_at IS NULL
+                """,
+                (username,),
+            ).fetchone()
+
+        if not row:
+            return None
+        return self._deserialize_user(row)
+
+    def authenticate_user(self, username: str, password: str) -> UserRecord | None:
+        with self._lock:
+            row = self._conn.execute(
+                """
+                SELECT username, password_hash, role, scopes
+                FROM users
+                WHERE username = ? AND disabled_at IS NULL
+                """,
+                (username,),
+            ).fetchone()
+
+        if not row:
+            return None
+
+        if not _verify_password(password, str(row["password_hash"])):
+            return None
+        return self._deserialize_user(row)
 
     def prune_expired(self) -> None:
         now_ts = int(_now_utc().timestamp())
@@ -122,7 +279,7 @@ class SessionStore:
         expires_at: int,
     ) -> None:
         now_ts = int(_now_utc().timestamp())
-        serialized_scopes = " ".join(scopes)
+        serialized_scopes = _serialize_scopes(scopes)
         with self._lock, self._conn:
             self._conn.execute(
                 """
@@ -155,7 +312,7 @@ class SessionStore:
             ).fetchone()
         if not row:
             return None
-        return self._deserialize(row)
+        return self._deserialize_session(row)
 
     def rotate_refresh(
         self,
@@ -190,7 +347,7 @@ class SessionStore:
                 """,
                 (_token_hash(next_refresh_jti), next_expires_at, now_ts, session_id, subject),
             )
-            return self._deserialize(row)
+            return self._deserialize_session(row)
 
     def revoke_session(self, session_id: str, subject: str, refresh_jti: str) -> bool:
         now_ts = int(_now_utc().timestamp())
@@ -242,11 +399,59 @@ def close_auth_resources() -> None:
             _session_store_path = None
 
 
+def _ensure_bootstrap_user(settings: Settings) -> None:
+    try:
+        username = normalize_username(settings.auth_username)
+    except ValueError:
+        return
+    if not settings.auth_password:
+        return
+    role = settings.auth_role.strip() or "admin"
+    scopes = _parse_scopes(settings.auth_scopes)
+    if not scopes:
+        scopes = ["chat:write", "chat:stream"]
+    store = get_session_store(settings)
+    store.upsert_user(username, settings.auth_password, role=role, scopes=scopes)
+
+
+def authenticate_user_credentials(
+    provided_username: str,
+    provided_password: str,
+    settings: Settings,
+) -> UserRecord | None:
+    _ensure_bootstrap_user(settings)
+    try:
+        normalized = normalize_username(provided_username)
+    except ValueError:
+        return None
+    if not provided_password:
+        return None
+    store = get_session_store(settings)
+    return store.authenticate_user(normalized, provided_password)
+
+
+def register_user_account(username: str, password: str, settings: Settings) -> UserRecord:
+    if not settings.auth_allow_self_signup:
+        raise HTTPException(status_code=403, detail="Self-signup is disabled.")
+
+    normalized_username = normalize_username(username)
+    _validate_password_policy(password, settings)
+
+    role = settings.auth_register_default_role.strip() or "user"
+    scopes = _parse_scopes(settings.auth_register_default_scopes)
+    if not scopes:
+        scopes = ["chat:write", "chat:stream"]
+
+    _ensure_bootstrap_user(settings)
+    store = get_session_store(settings)
+    created = store.create_user(normalized_username, password, role=role, scopes=scopes)
+    if not created:
+        raise HTTPException(status_code=409, detail="Username already exists.")
+    return created
+
+
 def is_login_valid(provided_username: str, provided_password: str, settings: Settings) -> bool:
-    return secrets.compare_digest(provided_username, settings.auth_username) and secrets.compare_digest(
-        provided_password,
-        settings.auth_password,
-    )
+    return authenticate_user_credentials(provided_username, provided_password, settings) is not None
 
 
 def _encode_token(claims: dict[str, Any], settings: Settings) -> str:
@@ -304,9 +509,18 @@ def _create_refresh_token(
     )
 
 
-def issue_token_pair(subject: str, settings: Settings) -> TokenPair:
-    role = settings.auth_role
-    scopes = _parse_scopes(settings.auth_scopes)
+def issue_token_pair(
+    subject: str,
+    settings: Settings,
+    *,
+    role: str | None = None,
+    scopes: list[str] | None = None,
+) -> TokenPair:
+    resolved_role = (role or settings.auth_role).strip() or "user"
+    resolved_scopes = scopes or _parse_scopes(settings.auth_scopes)
+    if not resolved_scopes:
+        resolved_scopes = ["chat:write", "chat:stream"]
+
     session_id = str(uuid4())
     refresh_jti = str(uuid4())
     refresh_token, refresh_expires_in, refresh_expires_at = _create_refresh_token(
@@ -317,8 +531,8 @@ def issue_token_pair(subject: str, settings: Settings) -> TokenPair:
     )
     access_token, access_expires_in = _create_access_token(
         subject=subject,
-        role=role,
-        scopes=scopes,
+        role=resolved_role,
+        scopes=resolved_scopes,
         session_id=session_id,
         settings=settings,
     )
@@ -328,8 +542,8 @@ def issue_token_pair(subject: str, settings: Settings) -> TokenPair:
     store.create_session(
         session_id=session_id,
         subject=subject,
-        role=role,
-        scopes=scopes,
+        role=resolved_role,
+        scopes=resolved_scopes,
         refresh_jti=refresh_jti,
         expires_at=refresh_expires_at,
     )
@@ -338,8 +552,8 @@ def issue_token_pair(subject: str, settings: Settings) -> TokenPair:
         refresh_token=refresh_token,
         expires_in=access_expires_in,
         refresh_expires_in=refresh_expires_in,
-        role=role,
-        scopes=scopes,
+        role=resolved_role,
+        scopes=resolved_scopes,
     )
 
 

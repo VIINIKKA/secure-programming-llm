@@ -22,7 +22,7 @@ Main threats addressed:
 - Direct backend misuse (JWT access control)
 
 Main residual risks:
-- Single local credential source (no external IdP / MFA / SSO integration)
+- Local account store only (no external IdP / MFA / SSO integration)
 - No TLS termination configured in repository by default
 - Limited protection against misinformation and advanced adversarial prompts
 
@@ -47,7 +47,7 @@ Main residual risks:
   - `backend/app/main.py`
 - CORS allowlist from configuration
   - `backend/app/main.py`, `backend/app/config.py`
-- JWT auth on `/auth/login` + bearer token validation for `/api/chat` and `/api/chat/stream`
+- JWT auth on `/auth/register` and `/auth/login` + bearer token validation for `/api/chat` and `/api/chat/stream`
   - `backend/app/auth.py`, `backend/app/main.py`, `.env.example`
 - Refresh token rotation + session revocation (`/auth/refresh`, `/auth/logout`) with server-side session checks
   - `backend/app/auth.py`, `backend/app/main.py`

@@ -3,6 +3,37 @@ from fastapi.testclient import TestClient
 from app import main
 
 
+def test_register_creates_account_and_returns_jwt(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "auth_allow_self_signup", True)
+    monkeypatch.setattr(main.settings, "jwt_secret", "test-secret")
+    monkeypatch.setattr(main.settings, "jwt_issuer", "issuer")
+    monkeypatch.setattr(main.settings, "jwt_audience", "audience")
+
+    client = TestClient(main.app)
+    response = client.post(
+        "/auth/register",
+        json={"username": "bob", "password": "StrongPass123"},
+    )
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["access_token"]
+    assert payload["refresh_token"]
+
+
+def test_register_rejects_duplicate_username(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "auth_allow_self_signup", True)
+    monkeypatch.setattr(main.settings, "jwt_secret", "test-secret")
+    monkeypatch.setattr(main.settings, "jwt_issuer", "issuer")
+    monkeypatch.setattr(main.settings, "jwt_audience", "audience")
+
+    client = TestClient(main.app)
+    first = client.post("/auth/register", json={"username": "bob", "password": "StrongPass123"})
+    assert first.status_code == 201
+
+    second = client.post("/auth/register", json={"username": "bob", "password": "StrongPass123"})
+    assert second.status_code == 409
+
+
 def test_login_rejects_invalid_credentials(monkeypatch) -> None:
     monkeypatch.setattr(main.settings, "auth_username", "admin")
     monkeypatch.setattr(main.settings, "auth_password", "correct-password")

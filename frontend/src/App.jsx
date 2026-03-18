@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 const API_CHAT_PATH = "/api/chat";
 const API_CHAT_STREAM_PATH = "/api/chat/stream";
+const API_REGISTER_PATH = "/auth/register";
 const API_LOGIN_PATH = "/auth/login";
 const API_REFRESH_PATH = "/auth/refresh";
 const API_LOGOUT_PATH = "/auth/logout";
@@ -84,6 +85,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [authReady, setAuthReady] = useState(false);
+  const [authMode, setAuthMode] = useState("login");
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -153,8 +155,7 @@ export default function App() {
     setMessages((current) => current.map((message) => (message.id === id ? { ...message, text } : message)));
   }
 
-  async function onLogin(event) {
-    event.preventDefault();
+  async function runAuthRequest(path, fallbackMessage) {
     if (!username.trim() || !password) {
       setError("Username and password are required.");
       return;
@@ -164,7 +165,7 @@ export default function App() {
     setError("");
 
     try {
-      const response = await fetch(API_LOGIN_PATH, {
+      const response = await fetch(path, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -177,10 +178,10 @@ export default function App() {
 
       const data = await parseResponseBody(response);
       if (!response.ok) {
-        throw new Error(parseApiError(response.status, data, "Login failed."));
+        throw new Error(parseApiError(response.status, data, fallbackMessage));
       }
       if (!data.access_token || !data.refresh_token) {
-        throw new Error("Login response was missing token data.");
+        throw new Error("Authentication response was missing token data.");
       }
 
       setAccessToken(data.access_token);
@@ -192,10 +193,20 @@ export default function App() {
       setAccessToken("");
       setRefreshToken("");
       setMessages([]);
-      setError(err.message || "Unexpected login error.");
+      setError(err.message || "Unexpected authentication error.");
     } finally {
       setAuthBusy(false);
     }
+  }
+
+  async function onLogin(event) {
+    event.preventDefault();
+    await runAuthRequest(API_LOGIN_PATH, "Login failed.");
+  }
+
+  async function onRegister(event) {
+    event.preventDefault();
+    await runAuthRequest(API_REGISTER_PATH, "Registration failed.");
   }
 
   async function onLogout() {
@@ -388,7 +399,7 @@ export default function App() {
             <p className="auth-note">Restoring session...</p>
           </section>
         ) : !accessToken ? (
-          <form onSubmit={onLogin} className="auth-form">
+          <form onSubmit={authMode === "login" ? onLogin : onRegister} className="auth-form">
             <label htmlFor="username">Username</label>
             <input
               id="username"
@@ -405,15 +416,30 @@ export default function App() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder="password"
-              autoComplete="current-password"
+              autoComplete={authMode === "login" ? "current-password" : "new-password"}
             />
 
             <div className="auth-actions">
               <button type="submit" disabled={authBusy} className="button-primary">
-                {authBusy ? "Logging in..." : "Login"}
+                {authBusy ? "Submitting..." : authMode === "login" ? "Login" : "Create account"}
               </button>
-              <span className="auth-note">Use your backend `AUTH_USERNAME` and `AUTH_PASSWORD`.</span>
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={() => {
+                  setError("");
+                  setAuthMode((current) => (current === "login" ? "register" : "login"));
+                }}
+                disabled={authBusy}
+              >
+                {authMode === "login" ? "Need an account?" : "Have an account?"}
+              </button>
             </div>
+            <span className="auth-note">
+              {authMode === "login"
+                ? "Log in with an existing account."
+                : "Password must include letters and numbers."}
+            </span>
           </form>
         ) : (
           <section className="chat">

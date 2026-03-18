@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     auth_password: str = "change-me"
     auth_role: str = "admin"
     auth_scopes: str = "chat:write chat:stream"
+    auth_allow_self_signup: bool = True
+    auth_register_default_role: str = "user"
+    auth_register_default_scopes: str = "chat:write chat:stream"
+    auth_min_password_length: int = 10
 
     jwt_secret: str = "change-me-jwt-secret"
     jwt_algorithm: str = "HS256"
