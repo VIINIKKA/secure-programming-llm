@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import QRCode from "qrcode";
 
 const API_CHAT_PATH = "/api/chat";
 const API_CHAT_STREAM_PATH = "/api/chat/stream";
@@ -97,6 +98,7 @@ export default function App() {
   const [mfaBusy, setMfaBusy] = useState(false);
   const [mfaSecret, setMfaSecret] = useState("");
   const [mfaUri, setMfaUri] = useState("");
+  const [mfaQrDataUrl, setMfaQrDataUrl] = useState("");
   const [mfaManageCode, setMfaManageCode] = useState("");
   const [mfaStatusMsg, setMfaStatusMsg] = useState("");
   const messagesEndRef = useRef(null);
@@ -112,6 +114,30 @@ export default function App() {
   useEffect(() => {
     writeSessionValue(REFRESH_TOKEN_STORAGE_KEY, refreshToken);
   }, [refreshToken]);
+
+  useEffect(() => {
+    let isCancelled = false;
+    async function buildQrCode() {
+      if (!mfaUri) {
+        setMfaQrDataUrl("");
+        return;
+      }
+      try {
+        const dataUrl = await QRCode.toDataURL(mfaUri, { width: 220, margin: 1 });
+        if (!isCancelled) {
+          setMfaQrDataUrl(dataUrl);
+        }
+      } catch {
+        if (!isCancelled) {
+          setMfaQrDataUrl("");
+        }
+      }
+    }
+    buildQrCode();
+    return () => {
+      isCancelled = true;
+    };
+  }, [mfaUri]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -179,6 +205,7 @@ export default function App() {
     setMfaPending(false);
     setMfaSecret("");
     setMfaUri("");
+    setMfaQrDataUrl("");
     setMfaManageCode("");
     setMfaStatusMsg("");
   }
@@ -639,6 +666,7 @@ export default function App() {
                   <p className="auth-note">
                     Add this secret to your authenticator app, then enter a code to enable:
                   </p>
+                  {mfaQrDataUrl ? <img className="mfa-qr" src={mfaQrDataUrl} alt="2FA setup QR code" /> : null}
                   <code className="mfa-secret">{mfaSecret}</code>
                   <a href={mfaUri} target="_blank" rel="noreferrer">
                     Open provisioning URI
