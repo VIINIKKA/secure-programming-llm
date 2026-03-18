@@ -64,6 +64,7 @@ Frontend is available at `http://localhost:8080`.
 - Sanitized logging only (no raw PII logging).
 - Rate limiting (`RATE_LIMIT`) and input/output token guardrails.
 - Multi-user account flow with JWT + refresh rotation (`/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`).
+- Optional free TOTP 2FA (authenticator app codes) with setup and enable/disable endpoints.
 - Scope enforcement on protected endpoints (`chat:write`, `chat:stream`).
 - Streaming chat endpoint (`/api/chat/stream`) for faster time-to-first-token.
 - Strict Pydantic request validation.
@@ -84,6 +85,10 @@ pytest -q backend/tests
 - `GET /healthz`
 - `POST /auth/login`
 - `POST /auth/register`
+- `GET /auth/2fa/status`
+- `POST /auth/2fa/setup`
+- `POST /auth/2fa/enable`
+- `POST /auth/2fa/disable`
 - `POST /auth/refresh`
 - `POST /auth/logout`
 - `POST /api/chat`
@@ -118,6 +123,16 @@ Login response:
   "refresh_expires_in": 604800,
   "role": "admin",
   "scopes": ["chat:write", "chat:stream"]
+}
+```
+
+If 2FA is enabled for the account, `/auth/login` requires an additional field:
+
+```json
+{
+  "username": "alice",
+  "password": "StrongPass123",
+  "otp_code": "123456"
 }
 ```
 

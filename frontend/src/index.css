@@ -144,8 +144,47 @@ textarea:focus {
 .chat {
   min-height: 0;
   display: grid;
-  grid-template-rows: 1fr auto;
+  grid-template-rows: auto 1fr auto;
   gap: 12px;
+}
+
+.mfa-panel {
+  border: 1px solid #d8e2f0;
+  border-radius: 12px;
+  background: rgba(238, 243, 251, 0.85);
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.mfa-title {
+  margin: 0;
+  font-weight: 600;
+  color: #22344f;
+}
+
+.mfa-setup {
+  display: grid;
+  gap: 6px;
+}
+
+.mfa-secret {
+  display: inline-block;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #cfdae9;
+  width: fit-content;
+}
+
+.mfa-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mfa-actions input {
+  max-width: 220px;
 }
 
 .messages {

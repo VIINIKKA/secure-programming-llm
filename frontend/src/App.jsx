@@ -6,6 +6,10 @@ const API_REGISTER_PATH = "/auth/register";
 const API_LOGIN_PATH = "/auth/login";
 const API_REFRESH_PATH = "/auth/refresh";
 const API_LOGOUT_PATH = "/auth/logout";
+const API_2FA_STATUS_PATH = "/auth/2fa/status";
+const API_2FA_SETUP_PATH = "/auth/2fa/setup";
+const API_2FA_ENABLE_PATH = "/auth/2fa/enable";
+const API_2FA_DISABLE_PATH = "/auth/2fa/disable";
 const DEFAULT_MAX_OUTPUT_TOKENS = 128;
 const ACCESS_TOKEN_STORAGE_KEY = "secureLlmAccessToken";
 const REFRESH_TOKEN_STORAGE_KEY = "secureLlmRefreshToken";
@@ -76,6 +80,7 @@ function parseSseEvent(rawBlock) {
 export default function App() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [otpCode, setOtpCode] = useState("");
   const [accessToken, setAccessToken] = useState(() => readSessionValue(ACCESS_TOKEN_STORAGE_KEY));
   const [refreshToken, setRefreshToken] = useState(() => readSessionValue(REFRESH_TOKEN_STORAGE_KEY));
   const [messages, setMessages] = useState([]);
@@ -86,6 +91,14 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [authMode, setAuthMode] = useState("login");
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaEnabled, setMfaEnabled] = useState(false);
+  const [mfaPending, setMfaPending] = useState(false);
+  const [mfaBusy, setMfaBusy] = useState(false);
+  const [mfaSecret, setMfaSecret] = useState("");
+  const [mfaUri, setMfaUri] = useState("");
+  const [mfaManageCode, setMfaManageCode] = useState("");
+  const [mfaStatusMsg, setMfaStatusMsg] = useState("");
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -104,7 +117,12 @@ export default function App() {
     let isCancelled = false;
 
     async function restoreSession() {
-      if (accessToken || !refreshToken) {
+      if (accessToken) {
+        await loadMfaStatus(accessToken);
+        setAuthReady(true);
+        return;
+      }
+      if (!refreshToken) {
         setAuthReady(true);
         return;
       }
@@ -155,6 +173,40 @@ export default function App() {
     setMessages((current) => current.map((message) => (message.id === id ? { ...message, text } : message)));
   }
 
+  function resetMfaState() {
+    setMfaRequired(false);
+    setMfaEnabled(false);
+    setMfaPending(false);
+    setMfaSecret("");
+    setMfaUri("");
+    setMfaManageCode("");
+    setMfaStatusMsg("");
+  }
+
+  async function loadMfaStatus(token) {
+    if (!token) {
+      setMfaEnabled(false);
+      setMfaPending(false);
+      return;
+    }
+    try {
+      const response = await fetch(API_2FA_STATUS_PATH, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await parseResponseBody(response);
+      if (!response.ok) {
+        return;
+      }
+      setMfaEnabled(Boolean(data.mfa_enabled));
+      setMfaPending(Boolean(data.mfa_pending));
+    } catch {
+      // Keep chat usable even when MFA status fetch fails.
+    }
+  }
+
   async function runAuthRequest(path, fallbackMessage) {
     if (!username.trim() || !password) {
       setError("Username and password are required.");
@@ -165,20 +217,30 @@ export default function App() {
     setError("");
 
     try {
+      const payload = {
+        username,
+        password,
+      };
+      if (path === API_LOGIN_PATH && otpCode.trim()) {
+        payload.otp_code = otpCode.trim();
+      }
       const response = await fetch(path, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          username,
-          password,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await parseResponseBody(response);
       if (!response.ok) {
-        throw new Error(parseApiError(response.status, data, fallbackMessage));
+        const message = parseApiError(response.status, data, fallbackMessage);
+        if (path === API_LOGIN_PATH && (message === "MFA code required." || message === "Invalid MFA code.")) {
+          setMfaRequired(true);
+          setError(message === "MFA code required." ? "Enter your 6-digit authenticator code." : message);
+          return;
+        }
+        throw new Error(message);
       }
       if (!data.access_token || !data.refresh_token) {
         throw new Error("Authentication response was missing token data.");
@@ -186,13 +248,17 @@ export default function App() {
 
       setAccessToken(data.access_token);
       setRefreshToken(data.refresh_token);
+      setMfaRequired(false);
+      setOtpCode("");
       setPassword("");
       setMessages([]);
       setDraft("");
+      await loadMfaStatus(data.access_token);
     } catch (err) {
       setAccessToken("");
       setRefreshToken("");
       setMessages([]);
+      resetMfaState();
       setError(err.message || "Unexpected authentication error.");
     } finally {
       setAuthBusy(false);
@@ -227,9 +293,11 @@ export default function App() {
     setAccessToken("");
     setRefreshToken("");
     setPassword("");
+    setOtpCode("");
     setMessages([]);
     setDraft("");
     setError("");
+    resetMfaState();
   }
 
   async function refreshSession(currentRefreshToken) {
@@ -251,7 +319,104 @@ export default function App() {
     }
     setAccessToken(data.access_token);
     setRefreshToken(data.refresh_token);
+    await loadMfaStatus(data.access_token);
     return data;
+  }
+
+  async function onStartMfaSetup() {
+    if (!accessToken) {
+      return;
+    }
+    setMfaBusy(true);
+    setMfaStatusMsg("");
+    setError("");
+    try {
+      const response = await fetch(API_2FA_SETUP_PATH, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      const data = await parseResponseBody(response);
+      if (!response.ok) {
+        throw new Error(parseApiError(response.status, data, "Failed to start 2FA setup."));
+      }
+      setMfaSecret(String(data.secret || ""));
+      setMfaUri(String(data.otpauth_uri || ""));
+      setMfaPending(true);
+      setMfaEnabled(false);
+      setMfaStatusMsg("Secret generated. Add it to your authenticator app and verify.");
+    } catch (err) {
+      setError(err.message || "Failed to start 2FA setup.");
+    } finally {
+      setMfaBusy(false);
+    }
+  }
+
+  async function onEnableMfa() {
+    if (!accessToken || !mfaManageCode.trim()) {
+      setError("Enter a 6-digit code to enable 2FA.");
+      return;
+    }
+    setMfaBusy(true);
+    setMfaStatusMsg("");
+    setError("");
+    try {
+      const response = await fetch(API_2FA_ENABLE_PATH, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ otp_code: mfaManageCode.trim() }),
+      });
+      const data = await parseResponseBody(response);
+      if (!response.ok) {
+        throw new Error(parseApiError(response.status, data, "Failed to enable 2FA."));
+      }
+      setMfaSecret("");
+      setMfaUri("");
+      setMfaManageCode("");
+      await loadMfaStatus(accessToken);
+      setMfaStatusMsg("2FA enabled for your account.");
+    } catch (err) {
+      setError(err.message || "Failed to enable 2FA.");
+    } finally {
+      setMfaBusy(false);
+    }
+  }
+
+  async function onDisableMfa() {
+    if (!accessToken || !mfaManageCode.trim()) {
+      setError("Enter a 6-digit code to disable 2FA.");
+      return;
+    }
+    setMfaBusy(true);
+    setMfaStatusMsg("");
+    setError("");
+    try {
+      const response = await fetch(API_2FA_DISABLE_PATH, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ otp_code: mfaManageCode.trim() }),
+      });
+      const data = await parseResponseBody(response);
+      if (!response.ok) {
+        throw new Error(parseApiError(response.status, data, "Failed to disable 2FA."));
+      }
+      setMfaSecret("");
+      setMfaUri("");
+      setMfaManageCode("");
+      await loadMfaStatus(accessToken);
+      setMfaStatusMsg("2FA disabled.");
+    } catch (err) {
+      setError(err.message || "Failed to disable 2FA.");
+    } finally {
+      setMfaBusy(false);
+    }
   }
 
   async function onSubmit(event) {
@@ -419,6 +584,20 @@ export default function App() {
               autoComplete={authMode === "login" ? "current-password" : "new-password"}
             />
 
+            {authMode === "login" && mfaRequired ? (
+              <>
+                <label htmlFor="otp-code">Authenticator code</label>
+                <input
+                  id="otp-code"
+                  inputMode="numeric"
+                  value={otpCode}
+                  onChange={(event) => setOtpCode(event.target.value)}
+                  placeholder="123456"
+                  autoComplete="one-time-code"
+                />
+              </>
+            ) : null}
+
             <div className="auth-actions">
               <button type="submit" disabled={authBusy} className="button-primary">
                 {authBusy ? "Submitting..." : authMode === "login" ? "Login" : "Create account"}
@@ -428,6 +607,8 @@ export default function App() {
                 className="button-secondary"
                 onClick={() => {
                   setError("");
+                  setMfaRequired(false);
+                  setOtpCode("");
                   setAuthMode((current) => (current === "login" ? "register" : "login"));
                 }}
                 disabled={authBusy}
@@ -437,12 +618,56 @@ export default function App() {
             </div>
             <span className="auth-note">
               {authMode === "login"
-                ? "Log in with an existing account."
+                ? mfaRequired
+                  ? "Enter username, password, and 6-digit authenticator code."
+                  : "Log in with an existing account."
                 : "Password must include letters and numbers."}
             </span>
           </form>
         ) : (
           <section className="chat">
+            <section className="mfa-panel">
+              <p className="mfa-title">Security: {mfaEnabled ? "2FA enabled" : "2FA disabled"}</p>
+              {!mfaEnabled && !mfaPending ? (
+                <button type="button" className="button-secondary" onClick={onStartMfaSetup} disabled={mfaBusy}>
+                  {mfaBusy ? "Preparing..." : "Set up 2FA"}
+                </button>
+              ) : null}
+
+              {mfaPending ? (
+                <div className="mfa-setup">
+                  <p className="auth-note">
+                    Add this secret to your authenticator app, then enter a code to enable:
+                  </p>
+                  <code className="mfa-secret">{mfaSecret}</code>
+                  <a href={mfaUri} target="_blank" rel="noreferrer">
+                    Open provisioning URI
+                  </a>
+                </div>
+              ) : null}
+
+              {(mfaPending || mfaEnabled) ? (
+                <div className="mfa-actions">
+                  <input
+                    inputMode="numeric"
+                    value={mfaManageCode}
+                    onChange={(event) => setMfaManageCode(event.target.value)}
+                    placeholder="Enter 6-digit code"
+                  />
+                  {mfaPending ? (
+                    <button type="button" className="button-primary" onClick={onEnableMfa} disabled={mfaBusy}>
+                      {mfaBusy ? "Verifying..." : "Enable 2FA"}
+                    </button>
+                  ) : (
+                    <button type="button" className="button-secondary" onClick={onDisableMfa} disabled={mfaBusy}>
+                      {mfaBusy ? "Updating..." : "Disable 2FA"}
+                    </button>
+                  )}
+                </div>
+              ) : null}
+              {mfaStatusMsg ? <p className="auth-note">{mfaStatusMsg}</p> : null}
+            </section>
+
             <div className="messages" aria-live="polite">
               {messages.length === 0 ? (
                 <div className="empty-state">

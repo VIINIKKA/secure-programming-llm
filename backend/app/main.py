@@ -12,12 +12,17 @@ from slowapi.util import get_remote_address
 
 from app.auth import (
     authenticate_user_credentials,
+    begin_mfa_setup,
     close_auth_resources,
+    disable_mfa_for_user,
+    enable_mfa_for_user,
+    get_user_mfa_state,
     issue_token_pair,
     register_user_account,
     refresh_token_pair,
     revoke_refresh_session,
     validate_request_auth,
+    verify_user_mfa_code,
 )
 from app.config import settings
 from app.llm_service import LLMService
@@ -64,6 +69,7 @@ class ChatResponse(BaseModel):
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
     password: str = Field(..., min_length=1, max_length=200)
+    otp_code: str | None = Field(default=None, min_length=6, max_length=12)
 
 
 class LoginResponse(BaseModel):
@@ -93,6 +99,20 @@ class StatusResponse(BaseModel):
     status: str
 
 
+class MfaSetupResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
+
+
+class MfaStatusResponse(BaseModel):
+    mfa_enabled: bool
+    mfa_pending: bool
+
+
+class MfaCodeRequest(BaseModel):
+    otp_code: str = Field(..., min_length=6, max_length=12)
+
+
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
@@ -111,6 +131,11 @@ async def login(body: LoginRequest, request: Request) -> LoginResponse:
     if not user:
         logger.warning("failed login attempt client=%s user=%s", get_remote_address(request), body.username)
         raise HTTPException(status_code=401, detail="Invalid credentials.")
+    if user.mfa_enabled:
+        if not body.otp_code:
+            raise HTTPException(status_code=401, detail="MFA code required.")
+        if not verify_user_mfa_code(user.username, body.otp_code, settings):
+            raise HTTPException(status_code=401, detail="Invalid MFA code.")
 
     token_pair = issue_token_pair(
         subject=user.username,
@@ -126,6 +151,44 @@ async def login(body: LoginRequest, request: Request) -> LoginResponse:
         role=token_pair.role,
         scopes=token_pair.scopes,
     )
+
+
+@app.get("/auth/2fa/status", response_model=MfaStatusResponse)
+@limiter.limit(settings.rate_limit)
+async def mfa_status(request: Request) -> MfaStatusResponse:
+    identity = validate_request_auth(request, settings)
+    state = get_user_mfa_state(identity.subject, settings)
+    return MfaStatusResponse(mfa_enabled=state["mfa_enabled"], mfa_pending=state["mfa_pending"])
+
+
+@app.post("/auth/2fa/setup", response_model=MfaSetupResponse)
+@limiter.limit(settings.rate_limit)
+async def mfa_setup(request: Request) -> MfaSetupResponse:
+    identity = validate_request_auth(request, settings)
+    secret, uri = begin_mfa_setup(identity.subject, settings)
+    return MfaSetupResponse(secret=secret, otpauth_uri=uri)
+
+
+@app.post("/auth/2fa/enable", response_model=StatusResponse)
+@limiter.limit(settings.rate_limit)
+async def mfa_enable(body: MfaCodeRequest, request: Request) -> StatusResponse:
+    identity = validate_request_auth(request, settings)
+    try:
+        enable_mfa_for_user(identity.subject, body.otp_code, settings)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return StatusResponse(status="mfa_enabled")
+
+
+@app.post("/auth/2fa/disable", response_model=StatusResponse)
+@limiter.limit(settings.rate_limit)
+async def mfa_disable(body: MfaCodeRequest, request: Request) -> StatusResponse:
+    identity = validate_request_auth(request, settings)
+    try:
+        disable_mfa_for_user(identity.subject, body.otp_code, settings)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return StatusResponse(status="mfa_disabled")
 
 
 @app.post("/auth/register", response_model=LoginResponse, status_code=201)

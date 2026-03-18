@@ -10,6 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 import jwt
+import pyotp
 from fastapi import HTTPException, Request
 from jwt import InvalidTokenError
 
@@ -19,6 +20,8 @@ USERNAME_ALLOWED = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123
 KDF_ALGORITHM = "pbkdf2_sha256"
 KDF_ITERATIONS = 240_000
 KDF_SALT_BYTES = 16
+TOTP_INTERVAL_SECONDS = 30
+TOTP_VALID_WINDOW_STEPS = 1
 
 
 @dataclass(frozen=True)
@@ -54,6 +57,7 @@ class UserRecord:
     username: str
     role: str
     scopes: list[str]
+    mfa_enabled: bool
 
 
 def _parse_scopes(value: str) -> list[str]:
@@ -164,12 +168,31 @@ class SessionStore:
                     password_hash TEXT NOT NULL,
                     role TEXT NOT NULL,
                     scopes TEXT NOT NULL,
+                    mfa_enabled INTEGER NOT NULL DEFAULT 0,
+                    mfa_secret TEXT,
+                    mfa_pending_secret TEXT,
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL,
                     disabled_at INTEGER
                 )
                 """
             )
+            self._ensure_user_columns()
+
+    def _ensure_user_columns(self) -> None:
+        columns = {
+            str(row["name"])
+            for row in self._conn.execute("PRAGMA table_info(users)").fetchall()
+        }
+        missing_statements: list[str] = []
+        if "mfa_enabled" not in columns:
+            missing_statements.append("ALTER TABLE users ADD COLUMN mfa_enabled INTEGER NOT NULL DEFAULT 0")
+        if "mfa_secret" not in columns:
+            missing_statements.append("ALTER TABLE users ADD COLUMN mfa_secret TEXT")
+        if "mfa_pending_secret" not in columns:
+            missing_statements.append("ALTER TABLE users ADD COLUMN mfa_pending_secret TEXT")
+        for statement in missing_statements:
+            self._conn.execute(statement)
 
     def close(self) -> None:
         with self._lock:
@@ -193,6 +216,7 @@ class SessionStore:
             username=str(row["username"]),
             role=str(row["role"]),
             scopes=scopes,
+            mfa_enabled=bool(int(row["mfa_enabled"])),
         )
 
     def upsert_user(self, username: str, password: str, role: str, scopes: list[str]) -> None:
@@ -235,7 +259,7 @@ class SessionStore:
             )
             row = self._conn.execute(
                 """
-                SELECT username, role, scopes
+                SELECT username, role, scopes, mfa_enabled
                 FROM users
                 WHERE username = ? AND disabled_at IS NULL
                 """,
@@ -250,7 +274,7 @@ class SessionStore:
         with self._lock:
             row = self._conn.execute(
                 """
-                SELECT username, password_hash, role, scopes
+                SELECT username, password_hash, role, scopes, mfa_enabled
                 FROM users
                 WHERE username = ? AND disabled_at IS NULL
                 """,
@@ -263,6 +287,87 @@ class SessionStore:
         if not _verify_password(password, str(row["password_hash"])):
             return None
         return self._deserialize_user(row)
+
+    def get_user(self, username: str) -> UserRecord | None:
+        with self._lock:
+            row = self._conn.execute(
+                """
+                SELECT username, role, scopes, mfa_enabled
+                FROM users
+                WHERE username = ? AND disabled_at IS NULL
+                """,
+                (username,),
+            ).fetchone()
+        if not row:
+            return None
+        return self._deserialize_user(row)
+
+    def set_pending_mfa_secret(self, username: str, pending_secret: str) -> bool:
+        now_ts = int(_now_utc().timestamp())
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                """
+                UPDATE users
+                SET mfa_pending_secret = ?, updated_at = ?
+                WHERE username = ? AND disabled_at IS NULL
+                """,
+                (pending_secret, now_ts, username),
+            )
+            return cursor.rowcount > 0
+
+    def get_pending_mfa_secret(self, username: str) -> str | None:
+        with self._lock:
+            row = self._conn.execute(
+                """
+                SELECT mfa_pending_secret
+                FROM users
+                WHERE username = ? AND disabled_at IS NULL
+                """,
+                (username,),
+            ).fetchone()
+        if not row:
+            return None
+        return str(row["mfa_pending_secret"]) if row["mfa_pending_secret"] else None
+
+    def commit_mfa_secret(self, username: str, secret: str) -> bool:
+        now_ts = int(_now_utc().timestamp())
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                """
+                UPDATE users
+                SET mfa_enabled = 1, mfa_secret = ?, mfa_pending_secret = NULL, updated_at = ?
+                WHERE username = ? AND disabled_at IS NULL
+                """,
+                (secret, now_ts, username),
+            )
+            return cursor.rowcount > 0
+
+    def disable_mfa(self, username: str) -> bool:
+        now_ts = int(_now_utc().timestamp())
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                """
+                UPDATE users
+                SET mfa_enabled = 0, mfa_secret = NULL, mfa_pending_secret = NULL, updated_at = ?
+                WHERE username = ? AND disabled_at IS NULL
+                """,
+                (now_ts, username),
+            )
+            return cursor.rowcount > 0
+
+    def get_mfa_secret(self, username: str) -> str | None:
+        with self._lock:
+            row = self._conn.execute(
+                """
+                SELECT mfa_secret
+                FROM users
+                WHERE username = ? AND disabled_at IS NULL AND mfa_enabled = 1
+                """,
+                (username,),
+            ).fetchone()
+        if not row:
+            return None
+        return str(row["mfa_secret"]) if row["mfa_secret"] else None
 
     def prune_expired(self) -> None:
         now_ts = int(_now_utc().timestamp())
@@ -448,6 +553,87 @@ def register_user_account(username: str, password: str, settings: Settings) -> U
     if not created:
         raise HTTPException(status_code=409, detail="Username already exists.")
     return created
+
+
+def _normalize_totp_code(code: str) -> str:
+    normalized = "".join(char for char in code.strip() if char.isdigit())
+    if len(normalized) != 6:
+        raise ValueError("MFA code must be 6 digits.")
+    return normalized
+
+
+def _verify_totp(secret: str, code: str) -> bool:
+    totp = pyotp.TOTP(secret, interval=TOTP_INTERVAL_SECONDS)
+    return bool(totp.verify(code, valid_window=TOTP_VALID_WINDOW_STEPS))
+
+
+def get_user_mfa_state(username: str, settings: Settings) -> dict[str, bool]:
+    _ensure_bootstrap_user(settings)
+    normalized = normalize_username(username)
+    store = get_session_store(settings)
+    user = store.get_user(normalized)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    pending = bool(store.get_pending_mfa_secret(normalized))
+    return {"mfa_enabled": user.mfa_enabled, "mfa_pending": pending}
+
+
+def begin_mfa_setup(username: str, settings: Settings) -> tuple[str, str]:
+    _ensure_bootstrap_user(settings)
+    normalized = normalize_username(username)
+    store = get_session_store(settings)
+    if not store.get_user(normalized):
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    secret = pyotp.random_base32()
+    saved = store.set_pending_mfa_secret(normalized, secret)
+    if not saved:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    uri = pyotp.TOTP(secret, interval=TOTP_INTERVAL_SECONDS).provisioning_uri(
+        name=normalized,
+        issuer_name=settings.app_name,
+    )
+    return secret, uri
+
+
+def enable_mfa_for_user(username: str, otp_code: str, settings: Settings) -> None:
+    normalized = normalize_username(username)
+    code = _normalize_totp_code(otp_code)
+    store = get_session_store(settings)
+    pending_secret = store.get_pending_mfa_secret(normalized)
+    if not pending_secret:
+        raise HTTPException(status_code=400, detail="MFA setup has not been started.")
+    if not _verify_totp(pending_secret, code):
+        raise HTTPException(status_code=400, detail="Invalid MFA code.")
+    if not store.commit_mfa_secret(normalized, pending_secret):
+        raise HTTPException(status_code=404, detail="User not found.")
+
+
+def disable_mfa_for_user(username: str, otp_code: str, settings: Settings) -> None:
+    normalized = normalize_username(username)
+    code = _normalize_totp_code(otp_code)
+    store = get_session_store(settings)
+    secret = store.get_mfa_secret(normalized)
+    if not secret:
+        raise HTTPException(status_code=400, detail="MFA is not enabled.")
+    if not _verify_totp(secret, code):
+        raise HTTPException(status_code=400, detail="Invalid MFA code.")
+    if not store.disable_mfa(normalized):
+        raise HTTPException(status_code=404, detail="User not found.")
+
+
+def verify_user_mfa_code(username: str, otp_code: str, settings: Settings) -> bool:
+    try:
+        normalized = normalize_username(username)
+        code = _normalize_totp_code(otp_code)
+    except ValueError:
+        return False
+    store = get_session_store(settings)
+    secret = store.get_mfa_secret(normalized)
+    if not secret:
+        return False
+    return _verify_totp(secret, code)
 
 
 def is_login_valid(provided_username: str, provided_password: str, settings: Settings) -> bool:

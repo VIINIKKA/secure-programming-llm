@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+import pyotp
 
 from app import main
 
@@ -32,6 +33,42 @@ def test_register_rejects_duplicate_username(monkeypatch) -> None:
 
     second = client.post("/auth/register", json={"username": "bob", "password": "StrongPass123"})
     assert second.status_code == 409
+
+
+def test_login_requires_mfa_code_when_enabled(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "auth_allow_self_signup", True)
+    monkeypatch.setattr(main.settings, "jwt_secret", "test-secret")
+    monkeypatch.setattr(main.settings, "jwt_issuer", "issuer")
+    monkeypatch.setattr(main.settings, "jwt_audience", "audience")
+
+    client = TestClient(main.app)
+    register = client.post("/auth/register", json={"username": "bob", "password": "StrongPass123"})
+    assert register.status_code == 201
+    token = register.json()["access_token"]
+
+    setup = client.post("/auth/2fa/setup", headers={"Authorization": f"Bearer {token}"})
+    assert setup.status_code == 200
+    secret = setup.json()["secret"]
+    code = pyotp.TOTP(secret).now()
+    enable = client.post("/auth/2fa/enable", headers={"Authorization": f"Bearer {token}"}, json={"otp_code": code})
+    assert enable.status_code == 200
+
+    login_without_code = client.post("/auth/login", json={"username": "bob", "password": "StrongPass123"})
+    assert login_without_code.status_code == 401
+    assert login_without_code.json()["detail"] == "MFA code required."
+
+    login_with_code = client.post(
+        "/auth/login",
+        json={"username": "bob", "password": "StrongPass123", "otp_code": pyotp.TOTP(secret).now()},
+    )
+    assert login_with_code.status_code == 200
+    assert login_with_code.json()["access_token"]
+
+
+def test_mfa_status_requires_bearer_token() -> None:
+    client = TestClient(main.app)
+    response = client.get("/auth/2fa/status")
+    assert response.status_code == 401
 
 
 def test_login_rejects_invalid_credentials(monkeypatch) -> None:

@@ -1,7 +1,16 @@
 from fastapi import HTTPException
 import pytest
+import pyotp
 
-from app.auth import authenticate_user_credentials, register_user_account
+from app.auth import (
+    authenticate_user_credentials,
+    begin_mfa_setup,
+    disable_mfa_for_user,
+    enable_mfa_for_user,
+    get_user_mfa_state,
+    register_user_account,
+    verify_user_mfa_code,
+)
 from app.config import Settings
 
 
@@ -67,3 +76,25 @@ def test_register_user_rejects_weak_password(tmp_path) -> None:
     )
     with pytest.raises(ValueError):
         register_user_account("bob", "short", settings)
+
+
+def test_totp_mfa_enable_verify_disable_flow(tmp_path) -> None:
+    settings = Settings(
+        auth_username="admin",
+        auth_password="Adm1nPass123",
+        auth_allow_self_signup=True,
+        jwt_session_db_path=str(tmp_path / "auth_sessions.db"),
+    )
+    register_user_account("bob", "Secure12345", settings)
+
+    secret, _ = begin_mfa_setup("bob", settings)
+    code = pyotp.TOTP(secret).now()
+    enable_mfa_for_user("bob", code, settings)
+
+    state = get_user_mfa_state("bob", settings)
+    assert state["mfa_enabled"] is True
+    assert verify_user_mfa_code("bob", code, settings)
+
+    disable_mfa_for_user("bob", code, settings)
+    state_after = get_user_mfa_state("bob", settings)
+    assert state_after["mfa_enabled"] is False
