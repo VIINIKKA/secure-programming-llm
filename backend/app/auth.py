@@ -16,9 +16,9 @@ from jwt import InvalidTokenError
 from app.config import Settings
 
 USERNAME_ALLOWED = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
-PASSWORD_HASH_ALGORITHM = "pbkdf2_sha256"
-PASSWORD_HASH_ITERATIONS = 240_000
-PASSWORD_SALT_BYTES = 16
+KDF_ALGORITHM = "pbkdf2_sha256"
+KDF_ITERATIONS = 240_000
+KDF_SALT_BYTES = 16
 
 
 @dataclass(frozen=True)
@@ -94,15 +94,15 @@ def _b64_decode(value: str) -> bytes:
 
 
 def _hash_password(password: str) -> str:
-    salt = secrets.token_bytes(PASSWORD_SALT_BYTES)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_HASH_ITERATIONS)
-    return f"{PASSWORD_HASH_ALGORITHM}${PASSWORD_HASH_ITERATIONS}${_b64_encode(salt)}${_b64_encode(digest)}"
+    salt = secrets.token_bytes(KDF_SALT_BYTES)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, KDF_ITERATIONS)
+    return f"{KDF_ALGORITHM}${KDF_ITERATIONS}${_b64_encode(salt)}${_b64_encode(digest)}"
 
 
 def _verify_password(password: str, stored_hash: str) -> bool:
     try:
         algorithm, iterations_raw, salt_raw, expected_raw = stored_hash.split("$", 3)
-        if algorithm != PASSWORD_HASH_ALGORITHM:
+        if algorithm != KDF_ALGORITHM:
             return False
         iterations = int(iterations_raw)
         salt = _b64_decode(salt_raw)
