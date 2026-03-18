@@ -11,9 +11,10 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from app.auth import (
+    authenticate_user_credentials,
     close_auth_resources,
-    is_login_valid,
     issue_token_pair,
+    register_user_account,
     refresh_token_pair,
     revoke_refresh_session,
     validate_request_auth,
@@ -61,7 +62,7 @@ class ChatResponse(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    username: str = Field(..., min_length=1, max_length=200)
+    username: str = Field(..., min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
     password: str = Field(..., min_length=1, max_length=200)
 
 
@@ -73,6 +74,11 @@ class LoginResponse(BaseModel):
     refresh_expires_in: int
     role: str
     scopes: list[str]
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
+    password: str = Field(..., min_length=1, max_length=200)
 
 
 class RefreshRequest(BaseModel):
@@ -101,11 +107,41 @@ async def shutdown_event() -> None:
 @app.post("/auth/login", response_model=LoginResponse)
 @limiter.limit(settings.rate_limit)
 async def login(body: LoginRequest, request: Request) -> LoginResponse:
-    if not is_login_valid(body.username, body.password, settings):
+    user = authenticate_user_credentials(body.username, body.password, settings)
+    if not user:
         logger.warning("failed login attempt client=%s user=%s", get_remote_address(request), body.username)
         raise HTTPException(status_code=401, detail="Invalid credentials.")
 
-    token_pair = issue_token_pair(subject=body.username, settings=settings)
+    token_pair = issue_token_pair(
+        subject=user.username,
+        settings=settings,
+        role=user.role,
+        scopes=user.scopes,
+    )
+    return LoginResponse(
+        access_token=token_pair.access_token,
+        refresh_token=token_pair.refresh_token,
+        expires_in=token_pair.expires_in,
+        refresh_expires_in=token_pair.refresh_expires_in,
+        role=token_pair.role,
+        scopes=token_pair.scopes,
+    )
+
+
+@app.post("/auth/register", response_model=LoginResponse, status_code=201)
+@limiter.limit(settings.rate_limit)
+async def register(body: RegisterRequest, request: Request) -> LoginResponse:
+    try:
+        user = register_user_account(body.username, body.password, settings)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    token_pair = issue_token_pair(
+        subject=user.username,
+        settings=settings,
+        role=user.role,
+        scopes=user.scopes,
+    )
     return LoginResponse(
         access_token=token_pair.access_token,
         refresh_token=token_pair.refresh_token,

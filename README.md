@@ -29,10 +29,14 @@ Edit `.env` values:
 - `OLLAMA_MODEL` defaults to `llama3.2:3b` (faster on CPU than larger models).
 - `OLLAMA_KEEP_ALIVE` keeps model loaded between requests (default `10m`).
 - `AUTH_USERNAME`/`AUTH_PASSWORD` are used by `/auth/login`.
+- `AUTH_USERNAME`/`AUTH_PASSWORD` bootstrap the initial account for first login.
 - `AUTH_ROLE` and `AUTH_SCOPES` define route-level authorization claims in access tokens.
+- `AUTH_ALLOW_SELF_SIGNUP` toggles `/auth/register`.
+- `AUTH_REGISTER_DEFAULT_ROLE` and `AUTH_REGISTER_DEFAULT_SCOPES` define claims for new accounts.
+- `AUTH_MIN_PASSWORD_LENGTH` defines minimum accepted password length.
 - `JWT_SECRET` must be set to a long random value.
 - `JWT_REFRESH_TOKEN_EXPIRES_DAYS` controls refresh-session lifetime.
-- `JWT_SESSION_DB_PATH` controls SQLite-backed refresh-session storage path (set to `/tmp/...` in container runtime).
+- `JWT_SESSION_DB_PATH` controls SQLite-backed auth/session storage path (`/data/auth_store.db` in container runtime).
 
 ## 3. Start the Stack
 
@@ -59,7 +63,7 @@ Frontend is available at `http://localhost:8080`.
 - PII redaction for email, phone, SSN, and card-like numbers before LLM call.
 - Sanitized logging only (no raw PII logging).
 - Rate limiting (`RATE_LIMIT`) and input/output token guardrails.
-- JWT access token flow with refresh rotation (`/auth/login`, `/auth/refresh`, `/auth/logout`).
+- Multi-user account flow with JWT + refresh rotation (`/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`).
 - Scope enforcement on protected endpoints (`chat:write`, `chat:stream`).
 - Streaming chat endpoint (`/api/chat/stream`) for faster time-to-first-token.
 - Strict Pydantic request validation.
@@ -79,6 +83,7 @@ pytest -q backend/tests
 
 - `GET /healthz`
 - `POST /auth/login`
+- `POST /auth/register`
 - `POST /auth/refresh`
 - `POST /auth/logout`
 - `POST /api/chat`
@@ -90,6 +95,15 @@ Login request (JWT mode):
 {
   "username": "admin",
   "password": "change-me"
+}
+```
+
+Register request:
+
+```json
+{
+  "username": "alice",
+  "password": "StrongPass123"
 }
 ```
 
