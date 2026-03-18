@@ -31,6 +31,7 @@ In-scope components:
   - Request timeout (`REQUEST_TIMEOUT_SECONDS`)
   - `backend/app/config.py`, `backend/app/main.py`, `backend/app/llm_service.py`
 - Multi-user JWT authentication on backend routes (`/auth/register`, `/auth/login` + bearer token validation on `/api/chat` and `/api/chat/stream`)
+- Optional TOTP 2FA using authenticator apps (`/auth/2fa/status`, `/auth/2fa/setup`, `/auth/2fa/enable`, `/auth/2fa/disable`)
 - Refresh-session controls with token rotation/revocation (`/auth/refresh`, `/auth/logout`)
 - Scope-based route authorization (`chat:write`, `chat:stream`)
   - `AUTH_USERNAME`, `AUTH_PASSWORD`, `AUTH_ROLE`, `AUTH_SCOPES`, `JWT_*`

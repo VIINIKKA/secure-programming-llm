@@ -49,6 +49,8 @@ Main residual risks:
   - `backend/app/main.py`, `backend/app/config.py`
 - JWT auth on `/auth/register` and `/auth/login` + bearer token validation for `/api/chat` and `/api/chat/stream`
   - `backend/app/auth.py`, `backend/app/main.py`, `.env.example`
+- Optional TOTP 2FA lifecycle (`/auth/2fa/status`, `/auth/2fa/setup`, `/auth/2fa/enable`, `/auth/2fa/disable`)
+  - `backend/app/auth.py`, `backend/app/main.py`, `frontend/src/App.jsx`
 - Refresh token rotation + session revocation (`/auth/refresh`, `/auth/logout`) with server-side session checks
   - `backend/app/auth.py`, `backend/app/main.py`
 - Scope-based authorization checks on protected chat routes
