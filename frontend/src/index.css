@@ -168,6 +168,15 @@ textarea:focus {
   gap: 6px;
 }
 
+.mfa-qr {
+  width: 180px;
+  height: 180px;
+  border-radius: 8px;
+  border: 1px solid #cfdae9;
+  background: #fff;
+  padding: 4px;
+}
+
 .mfa-secret {
   display: inline-block;
   padding: 6px 8px;
