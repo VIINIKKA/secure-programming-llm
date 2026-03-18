@@ -6,6 +6,34 @@ const API_LOGIN_PATH = "/auth/login";
 const API_REFRESH_PATH = "/auth/refresh";
 const API_LOGOUT_PATH = "/auth/logout";
 const DEFAULT_MAX_OUTPUT_TOKENS = 128;
+const ACCESS_TOKEN_STORAGE_KEY = "secureLlmAccessToken";
+const REFRESH_TOKEN_STORAGE_KEY = "secureLlmRefreshToken";
+
+function readSessionValue(key) {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  try {
+    return window.sessionStorage.getItem(key) || "";
+  } catch {
+    return "";
+  }
+}
+
+function writeSessionValue(key, value) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    if (value) {
+      window.sessionStorage.setItem(key, value);
+    } else {
+      window.sessionStorage.removeItem(key);
+    }
+  } catch {
+    // Ignore storage errors and continue with in-memory auth state.
+  }
+}
 
 function parseApiError(status, payload, fallback) {
   if (payload && typeof payload === "object") {
@@ -47,19 +75,59 @@ function parseSseEvent(rawBlock) {
 export default function App() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [accessToken, setAccessToken] = useState("");
-  const [refreshToken, setRefreshToken] = useState("");
+  const [accessToken, setAccessToken] = useState(() => readSessionValue(ACCESS_TOKEN_STORAGE_KEY));
+  const [refreshToken, setRefreshToken] = useState(() => readSessionValue(REFRESH_TOKEN_STORAGE_KEY));
   const [messages, setMessages] = useState([]);
 
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, busy]);
+
+  useEffect(() => {
+    writeSessionValue(ACCESS_TOKEN_STORAGE_KEY, accessToken);
+  }, [accessToken]);
+
+  useEffect(() => {
+    writeSessionValue(REFRESH_TOKEN_STORAGE_KEY, refreshToken);
+  }, [refreshToken]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function restoreSession() {
+      if (accessToken || !refreshToken) {
+        setAuthReady(true);
+        return;
+      }
+
+      try {
+        await refreshSession(refreshToken);
+      } catch {
+        if (!isCancelled) {
+          setAccessToken("");
+          setRefreshToken("");
+        }
+      } finally {
+        if (!isCancelled) {
+          setAuthReady(true);
+        }
+      }
+    }
+
+    restoreSession();
+    return () => {
+      isCancelled = true;
+    };
+    // Run once on app mount to restore persisted auth state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function createMessageId() {
     if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
@@ -315,7 +383,11 @@ export default function App() {
           ) : null}
         </header>
 
-        {!accessToken ? (
+        {!authReady ? (
+          <section className="auth-form">
+            <p className="auth-note">Restoring session...</p>
+          </section>
+        ) : !accessToken ? (
           <form onSubmit={onLogin} className="auth-form">
             <label htmlFor="username">Username</label>
             <input
@@ -340,6 +412,7 @@ export default function App() {
               <button type="submit" disabled={authBusy} className="button-primary">
                 {authBusy ? "Logging in..." : "Login"}
               </button>
+              <span className="auth-note">Use your backend `AUTH_USERNAME` and `AUTH_PASSWORD`.</span>
             </div>
           </form>
         ) : (
