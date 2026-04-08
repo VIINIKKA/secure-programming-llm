@@ -14,6 +14,12 @@ That makes this repository less of a generic chat app and more of a secure syste
 - rate limits and token guardrails
 - containerized deployment and Jenkins CI/CD
 
+## AI Disclaimer
+
+This project uses a language model to generate responses. Model output can be incorrect, incomplete, biased, or misleading, so it should be treated as assistant output rather than authoritative fact or professional advice.
+
+Language models were also used during development as coding assistants. Final implementation choices, integration, testing, and repository contents were reviewed and controlled within the project workflow.
+
 ## Architecture
 
 The runtime is split into three services:
