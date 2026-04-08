@@ -580,16 +580,14 @@ export default function App() {
 
   const isLoginMode = authMode === "login";
   const authTitle = isLoginMode ? "Welcome back" : "Create a protected workspace";
-  const authBody = isLoginMode
-    ? "Sign in to continue to the secured chat gateway."
-    : "Create a local account with JWT sessions and optional two-factor authentication.";
+  const authBody = isLoginMode ? "Sign in to continue." : "Create a local account.";
   const authSubmitLabel = authBusy ? "Submitting..." : isLoginMode ? "Login" : "Create account";
   const mfaStateLabel = mfaPending ? "Setup in progress" : mfaEnabled ? "2FA enabled" : "2FA disabled";
   const mfaStateDescription = mfaPending
-    ? "Scan the QR code, verify one code from your authenticator app, and 2FA becomes required on future logins."
+    ? "Scan and verify your authenticator."
     : mfaEnabled
-      ? "Your account now requires a time-based one-time code in addition to your password."
-      : "Enable authenticator-based 2FA to add a second factor to account access.";
+      ? "A code is now required at login."
+      : "Add an authenticator code to your login.";
 
   return (
     <main className="app-shell">
@@ -610,34 +608,30 @@ export default function App() {
           <section className="auth-loading">
             <div className="auth-card auth-card-loading">
               <span className="eyebrow">Session</span>
-              <h2>Restoring secure session</h2>
-              <p className="auth-note">Checking stored tokens and account security state.</p>
+              <h2>Restoring session</h2>
+              <p className="auth-note">Checking saved login state.</p>
             </div>
           </section>
         ) : !accessToken ? (
           <section className="auth-layout">
             <aside className="auth-hero">
               <span className="eyebrow">Protected access</span>
-              <h2>Secure entry for your local LLM gateway</h2>
-              <p className="auth-note auth-hero-copy">
-                Accounts use JWT sessions with refresh rotation, optional authenticator-based 2FA, and backend
-                authorization checks before the model is reached.
-              </p>
+              <h2>Sign in to the secure LLM gateway</h2>
               <div className="hero-points">
                 <article className="hero-point">
                   <span className="hero-point-kicker">JWT</span>
                   <strong>Session-backed tokens</strong>
-                  <p>Access tokens stay lightweight while refresh and logout remain revocable server-side.</p>
+                  <p>Refresh and logout stay revocable server-side.</p>
                 </article>
                 <article className="hero-point">
                   <span className="hero-point-kicker">2FA</span>
                   <strong>Authenticator app support</strong>
-                  <p>Enable TOTP on your account and require a second factor for future logins.</p>
+                  <p>Add a second factor to login.</p>
                 </article>
                 <article className="hero-point">
                   <span className="hero-point-kicker">Guardrails</span>
                   <strong>Secure backend first</strong>
-                  <p>Prompt filtering, PII redaction, scopes, and rate limits are enforced before model access.</p>
+                  <p>Checks run before model access.</p>
                 </article>
               </div>
             </aside>
@@ -708,7 +702,6 @@ export default function App() {
                     placeholder="123456"
                     autoComplete="one-time-code"
                   />
-                  <p className="auth-note">Enter the current 6-digit code from your authenticator app.</p>
                 </div>
               ) : null}
 
@@ -719,11 +712,6 @@ export default function App() {
               </div>
 
               <div className="auth-footer">
-                <p className="auth-note">
-                  {isLoginMode
-                    ? "Use your existing account. If 2FA is enabled, the form will ask for your one-time code."
-                    : "New accounts receive backend-protected chat scopes and can enable 2FA after sign-in."}
-                </p>
                 <button
                   type="button"
                   className="text-button"
@@ -752,9 +740,6 @@ export default function App() {
               <div className="security-grid">
                 <article className="security-card">
                   <h3>Session model</h3>
-                  <p className="auth-note">
-                    Chat access is protected by JWT bearer tokens with refresh rotation and revocation in the backend.
-                  </p>
                   <ul className="security-list">
                     <li>Authenticated requests only</li>
                     <li>Refresh tokens can be rotated and revoked</li>
@@ -766,7 +751,6 @@ export default function App() {
                   <div className="security-card-header">
                     <div>
                       <h3>Two-factor authentication</h3>
-                      <p className="auth-note">Protect your account with a time-based authenticator code.</p>
                     </div>
                     {!mfaEnabled && !mfaPending ? (
                       <button type="button" className="button-secondary" onClick={onStartMfaSetup} disabled={mfaBusy}>
@@ -780,7 +764,7 @@ export default function App() {
                       <div className="mfa-qr-card">
                         <span className="eyebrow">Step 1</span>
                         <h4>Scan the QR code</h4>
-                        <p className="auth-note">Use Google Authenticator, 1Password, Authy, or another TOTP app.</p>
+                        <p className="auth-note">Use any TOTP app.</p>
                         {mfaQrDataUrl ? <img className="mfa-qr" src={mfaQrDataUrl} alt="2FA setup QR code" /> : null}
                         <a className="mfa-link" href={mfaUri} target="_blank" rel="noreferrer">
                           Open provisioning URI
@@ -790,9 +774,7 @@ export default function App() {
                       <div className="mfa-details-card">
                         <span className="eyebrow">Step 2</span>
                         <h4>Confirm setup</h4>
-                        <p className="auth-note">
-                          If scanning is not available, copy the secret manually into your authenticator app.
-                        </p>
+                        <p className="auth-note">Or paste the secret manually.</p>
                         <code className="mfa-secret">{mfaSecret}</code>
                         <div className="mfa-actions">
                           <input
@@ -805,7 +787,6 @@ export default function App() {
                             {mfaBusy ? "Verifying..." : "Enable 2FA"}
                           </button>
                         </div>
-                        <p className="auth-note">After verification, future logins will require both password and OTP.</p>
                       </div>
                     </div>
                   ) : null}
@@ -815,9 +796,6 @@ export default function App() {
                       <div>
                         <span className="eyebrow">Manage 2FA</span>
                         <h4>Disable with current code</h4>
-                        <p className="auth-note">
-                          For security, turning off 2FA requires a valid current authenticator code.
-                        </p>
                       </div>
                       <div className="mfa-actions">
                         <input
@@ -835,10 +813,7 @@ export default function App() {
 
                   {!mfaEnabled && !mfaPending ? (
                     <div className="mfa-empty">
-                      <p className="auth-note">
-                        Setup takes two short steps: generate a secret, scan the QR code, then verify one code from
-                        your authenticator app.
-                      </p>
+                      <p className="auth-note">Scan, verify, and 2FA is active.</p>
                     </div>
                   ) : null}
 
