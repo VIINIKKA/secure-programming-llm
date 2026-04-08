@@ -35,6 +35,20 @@ Why it was done:
 - Ollama is not exposed directly to the user.
 - Authentication, authorization, redaction, and rate limits are applied before model access.
 
+### Architecture Diagram
+
+```mermaid
+flowchart LR
+    U[User / Browser] --> FE[Frontend<br/>React + Nginx]
+    FE --> BE[Backend<br/>FastAPI security layer]
+    BE --> OLL[Ollama<br/>Local LLM runtime]
+    BE --> DB[(SQLite auth/session store)]
+
+    FE -.->|/auth/* and /api/*| BE
+    BE -.->|JWT sessions, scopes, 2FA, redaction, limits| OLL
+    DB -.->|users, MFA state, refresh sessions| BE
+```
+
 ## What To Look At First
 
 If you are reviewing the project for implementation quality, open these files first:
@@ -147,6 +161,39 @@ Why this matters:
 
 This makes the repository a good example of practical session security, not just basic login handling.
 
+### Authentication Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User / Browser
+    participant FE as Frontend
+    participant BE as FastAPI Backend
+    participant DB as SQLite Auth Store
+    participant API as Protected API
+
+    U->>FE: Enter username + password
+    FE->>BE: POST /auth/login
+    BE->>DB: Load user + verify password hash
+    DB-->>BE: User record
+    BE->>DB: Create session + refresh state
+    DB-->>BE: Session stored
+    BE-->>FE: Access token + refresh token
+
+    FE->>BE: Bearer access token on protected route
+    BE->>DB: Check active session_id
+    DB-->>BE: Session active
+    BE->>API: Allow request
+    API-->>FE: Protected response
+
+    FE->>BE: POST /auth/refresh
+    BE->>DB: Validate session + refresh token JTI
+    DB-->>BE: Refresh state valid
+    BE->>DB: Rotate refresh state
+    DB-->>BE: Session updated
+    BE-->>FE: New token pair
+```
+
 ## Frontend Tour
 
 The frontend lives mainly in `frontend/src/App.jsx`.
@@ -165,6 +212,25 @@ The frontend talks only to backend routes such as `/auth/login`, `/auth/register
 Model output is rendered as plain text in the UI. The app does not use raw HTML rendering for assistant output, which reduces output-handling risk on the client side.
 
 The 2FA UI was designed so that setup is visible when needed, but once 2FA is enabled, the chat stays the main focus and only a compact protection indicator remains.
+
+### UI Walkthrough
+
+The main frontend states are:
+
+1. Sign-in screen:
+   - username and password entry
+   - automatic OTP field when the account requires 2FA
+2. Create account screen:
+   - local account registration
+   - password policy guidance
+3. 2FA setup flow:
+   - QR provisioning
+   - manual secret fallback
+   - OTP verification to enable MFA
+4. Protected chat view:
+   - compact 2FA status indicator
+   - streaming responses
+   - chat remains the primary focus after setup
 
 ## LLM-Specific Security Controls
 
@@ -200,6 +266,51 @@ The pipeline runs:
 - post-deploy health verification
 
 This is important because the project is not only about secure code. It also demonstrates secure delivery and verification practices.
+
+### CI/CD Flow
+
+The pipeline can also be read visually:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Dev as Developer
+    participant GH as GitHub
+    participant J as Jenkins (Multibranch)
+    participant VM as Staging VM
+    participant DC as Docker Compose
+    participant FE as Frontend (Nginx)
+    participant BE as Backend (FastAPI)
+
+    Dev->>GH: Push commit to master-staging
+    GH->>J: Webhook POST (/github-webhook/)
+    J->>J: Branch indexing + load Jenkinsfile
+    J->>J: Checkout stage
+    J->>J: Backend Tests and SAST (pytest, bandit, pip-audit)
+    alt Backend checks fail
+        J-->>GH: Build status = failed
+    else Backend checks pass
+        J->>J: Frontend Audit (npm ci, npm audit --audit-level=high)
+        alt Frontend audit fails
+            J-->>GH: Build status = failed
+        else Frontend audit passes
+            J->>J: Build Containers (docker compose build)
+            alt Build fails
+                J-->>GH: Build status = failed
+            else Build succeeds
+                J->>VM: SSH deploy (csc-vm-ssh + csc-vm-host)
+                VM->>VM: git fetch/checkout/pull master-staging
+                VM->>DC: docker compose up -d --build --remove-orphans
+                VM->>FE: curl localhost:8080/healthz (retry loop)
+                FE->>BE: Proxy /healthz to backend
+                BE-->>FE: 200 OK
+                FE-->>VM: 200 OK
+                VM->>DC: docker compose ps
+                J-->>GH: Build status = success
+            end
+        end
+    end
+```
 
 ## Testing
 
