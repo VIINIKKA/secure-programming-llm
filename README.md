@@ -101,6 +101,8 @@ It implements:
 - TOTP 2FA setup and verification
 - scope-aware bearer-token validation
 
+Passwords are never stored in plaintext. The backend hashes them with salted PBKDF2-HMAC-SHA256 before saving them in the SQLite auth store.
+
 The key point is that this project does not rely on stateless JWTs alone. It uses a server-side session store so the backend can:
 
 - track active sessions
