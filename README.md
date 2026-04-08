@@ -1,216 +1,275 @@
 # Secure LLM Assistant
 
-This project runs a local secure LLM wrapper with three services:
-- `frontend` (React/Vite + Nginx)
-- `backend` (FastAPI security layer)
-- `ollama` (local LLM engine)
+This repository is a secure local LLM application built around one main idea:
 
-## 1. VM Prerequisites (Ubuntu)
+The user should never communicate directly with the model. Every request goes through a FastAPI backend that acts as a security gateway in front of Ollama.
 
-```bash
-sudo apt update
-sudo apt install -y docker.io docker-compose-plugin git ufw fail2ban
-sudo usermod -aG docker "$USER"
-newgrp docker
-```
+That makes this repository less of a generic chat app and more of a secure systems project. The main implementation themes are:
 
-Optional hardening:
-- Disable SSH password auth and root login.
-- Allow only required ports with UFW (`22`, `80`, `443` or `8080` during development).
+- backend-first trust boundary
+- JWT authentication with a server-side session database
+- refresh token rotation and logout revocation
+- optional TOTP-based 2FA
+- prompt sanitization and PII redaction
+- rate limits and token guardrails
+- containerized deployment and Jenkins CI/CD
 
-## 2. Configure Environment
+## Architecture
+
+The runtime is split into three services:
+
+- `frontend`: React UI served by Nginx
+- `backend`: FastAPI security layer
+- `ollama`: local LLM runtime
+
+Request flow:
+
+`User -> Frontend -> Backend -> Ollama`
+
+This separation is the most important design choice in the repository.
+
+Why it was done:
+
+- The frontend stays focused on UX.
+- The backend becomes the single place where security policy is enforced.
+- Ollama is not exposed directly to the user.
+- Authentication, authorization, redaction, and rate limits are applied before model access.
+
+## What To Look At First
+
+If you are reviewing the project for implementation quality, open these files first:
+
+- `backend/app/main.py`
+- `backend/app/auth.py`
+- `backend/app/security.py`
+- `backend/app/llm_service.py`
+- `frontend/src/App.jsx`
+- `docker-compose.yml`
+- `Jenkinsfile`
+- `SECURITY.md`
+
+## Backend Tour
+
+### `backend/app/main.py`
+
+This is the main API entrypoint. It defines:
+
+- health endpoint
+- login / register / refresh / logout routes
+- 2FA setup and management routes
+- normal chat endpoint
+- streaming chat endpoint
+
+It is also where the backend connects the security pieces together:
+
+- request validation with Pydantic
+- JWT bearer-token enforcement
+- scope checks
+- prompt sanitization
+- prompt-injection blocking
+- PII redaction
+- rate limiting
+- token-size guardrails
+
+### `backend/app/auth.py`
+
+This file contains the most important security logic in the project.
+
+It implements:
+
+- password hashing
+- user registration and login
+- JWT access tokens
+- refresh tokens
+- SQLite-backed session storage
+- refresh token rotation
+- logout revocation
+- TOTP 2FA setup and verification
+- scope-aware bearer-token validation
+
+The key point is that this project does not rely on stateless JWTs alone. It uses a server-side session store so the backend can:
+
+- track active sessions
+- rotate refresh tokens
+- reject replayed refresh tokens
+- revoke sessions on logout
+
+That makes the authentication model much stronger than a basic JWT demo.
+
+### `backend/app/security.py`
+
+This file contains LLM-oriented and privacy-oriented input/output protections:
+
+- control character stripping
+- whitespace normalization
+- regex-based prompt-injection detection
+- PII redaction for common sensitive data
+- log-safe sanitization
+- approximate token counting for guardrails
+
+This was added because LLM applications need protections beyond normal form validation. Prompts can be malicious, and sensitive data should not be passed through or logged carelessly.
+
+### `backend/app/llm_service.py`
+
+This file wraps communication with Ollama.
+
+It exists to keep model access separate from the rest of the backend. It handles:
+
+- request payload construction
+- timeouts
+- upstream error handling
+- streaming response parsing
+- connection reuse
+
+## JWT Session Database And 2FA
+
+This is one of the strongest parts of the implementation.
+
+The authentication model uses:
+
+- short-lived access tokens
+- refresh tokens
+- a SQLite-backed session database
+
+Why this matters:
+
+- protected routes can check whether the session is still active
+- logout can revoke access immediately
+- refresh token rotation can detect and reject replay attempts
+
+2FA is implemented with TOTP:
+
+- backend uses `pyotp`
+- frontend renders a QR provisioning code
+- enabling 2FA requires a valid OTP
+- future logins require password plus OTP
+- disabling 2FA also requires a valid OTP
+
+This makes the repository a good example of practical session security, not just basic login handling.
+
+## Frontend Tour
+
+The frontend lives mainly in `frontend/src/App.jsx`.
+
+It implements:
+
+- login
+- account creation
+- session restoration
+- streaming chat UI
+- 2FA setup and management
+- logout
+
+The frontend talks only to backend routes such as `/auth/login`, `/auth/register`, `/auth/refresh`, `/api/chat`, and `/api/chat/stream`.
+
+Model output is rendered as plain text in the UI. The app does not use raw HTML rendering for assistant output, which reduces output-handling risk on the client side.
+
+The 2FA UI was designed so that setup is visible when needed, but once 2FA is enabled, the chat stays the main focus and only a compact protection indicator remains.
+
+## LLM-Specific Security Controls
+
+The project addresses several LLM-specific concerns directly in the backend:
+
+- Prompt injection:
+  - sanitized input
+  - suspicious prompt-pattern blocking
+- Sensitive information disclosure:
+  - PII redaction before LLM call
+  - response redaction
+  - sanitized logs
+- Unbounded consumption:
+  - rate limiting
+  - input token cap
+  - output token cap
+  - request timeout
+
+These controls are explained in more detail in `SECURITY.md`.
+
+## CI/CD And Delivery
+
+The repository includes a Jenkins pipeline in `Jenkinsfile`.
+
+The pipeline runs:
+
+- backend tests with `pytest`
+- Python SAST with `bandit`
+- Python dependency audit with `pip-audit`
+- frontend dependency audit with `npm audit`
+- container build with `docker compose build`
+- deployment to `master-staging`
+- post-deploy health verification
+
+This is important because the project is not only about secure code. It also demonstrates secure delivery and verification practices.
+
+## Testing
+
+The backend test suite covers the security-critical behavior of the application, including:
+
+- security helper functions
+- registration and login
+- JWT-protected API access
+- refresh token rotation
+- logout revocation
+- 2FA flows
+- scope enforcement
+- streaming behavior
+- Ollama service error handling
+
+Main test directory:
+
+- `backend/tests/`
+
+## Repository Structure
+
+High-value areas in the repository:
+
+- `backend/app/`
+  - backend logic and security controls
+- `backend/tests/`
+  - tests for security-critical behavior
+- `frontend/src/`
+  - login, 2FA, and chat UI
+- `docker-compose.yml`
+  - service topology and runtime hardening
+- `Jenkinsfile`
+  - CI/CD pipeline
+- `.github/dependabot.yml`
+  - dependency update automation
+
+## Minimal Setup
+
+This repository is primarily intended to be read as an implementation tour, but if needed, the local stack can still be started with:
 
 ```bash
 cp .env.example .env
-```
-
-Edit `.env` values:
-- `PUBLIC_URL` should match your frontend URL on the VM (for example `http://<floating-ip>:8080`).
-- `OLLAMA_MODEL` defaults to `llama3.2:3b` (faster on CPU than larger models).
-- `OLLAMA_KEEP_ALIVE` keeps model loaded between requests (default `10m`).
-- `AUTH_USERNAME`/`AUTH_PASSWORD` are used by `/auth/login`.
-- `AUTH_USERNAME`/`AUTH_PASSWORD` bootstrap the initial account for first login.
-- `AUTH_ROLE` and `AUTH_SCOPES` define route-level authorization claims in access tokens.
-- `AUTH_ALLOW_SELF_SIGNUP` toggles `/auth/register`.
-- `AUTH_REGISTER_DEFAULT_ROLE` and `AUTH_REGISTER_DEFAULT_SCOPES` define claims for new accounts.
-- `AUTH_MIN_PASSWORD_LENGTH` defines minimum accepted password length.
-- `JWT_SECRET` must be set to a long random value.
-- `JWT_REFRESH_TOKEN_EXPIRES_DAYS` controls refresh-session lifetime.
-- `JWT_SESSION_DB_PATH` controls SQLite-backed auth/session storage path (`/data/auth_store.db` in container runtime).
-
-## 3. Start the Stack
-
-```bash
 docker compose up -d --build
 ```
 
-Model bootstrap note:
-- `ollama-init` runs automatically and ensures `OLLAMA_MODEL` is present before backend startup.
-- If the model already exists in the `ollama_data` volume, it exits quickly.
-
-Then verify:
+Useful verification commands:
 
 ```bash
-docker compose ps
+pytest -q backend/tests
+npm --prefix frontend run build
 curl http://localhost:8080/healthz
 ```
 
-Frontend is available at `http://localhost:8080`.
+## API Summary
 
-## 4. Security Controls Implemented (Backend)
+Main routes:
 
-- Input sanitization and prompt-injection pattern checks.
-- PII redaction for email, phone, SSN, and card-like numbers before LLM call.
-- Sanitized logging only (no raw PII logging).
-- Rate limiting (`RATE_LIMIT`) and input/output token guardrails.
-- Multi-user account flow with JWT + refresh rotation (`/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`).
-- Optional free TOTP 2FA (authenticator app codes) with setup and enable/disable endpoints.
-- Scope enforcement on protected endpoints (`chat:write`, `chat:stream`).
-- Streaming chat endpoint (`/api/chat/stream`) for faster time-to-first-token.
-- Strict Pydantic request validation.
-- CORS restricted to configured origins.
-- Container runtime hardening for app services (`read_only`, `no-new-privileges`, capability drop, health checks).
-
-## 5. Backend Local Test Command
-
-```bash
-python -m venv .venv
-. .venv/bin/activate
-pip install -r backend/requirements.txt
-pytest -q backend/tests
-```
-
-## 6. API Contract
-
-- `GET /healthz`
 - `POST /auth/login`
 - `POST /auth/register`
+- `POST /auth/refresh`
+- `POST /auth/logout`
 - `GET /auth/2fa/status`
 - `POST /auth/2fa/setup`
 - `POST /auth/2fa/enable`
 - `POST /auth/2fa/disable`
-- `POST /auth/refresh`
-- `POST /auth/logout`
 - `POST /api/chat`
-- `POST /api/chat/stream` (SSE stream)
+- `POST /api/chat/stream`
 
-Login request (JWT mode):
+## Security Notes
 
-```json
-{
-  "username": "admin",
-  "password": "change-me"
-}
-```
+For the security posture, residual risks, and OWASP LLM mapping, read:
 
-Register request:
-
-```json
-{
-  "username": "alice",
-  "password": "StrongPass123"
-}
-```
-
-Login response:
-
-```json
-{
-  "access_token": "<jwt>",
-  "refresh_token": "<jwt>",
-  "token_type": "bearer",
-  "expires_in": 1800,
-  "refresh_expires_in": 604800,
-  "role": "admin",
-  "scopes": ["chat:write", "chat:stream"]
-}
-```
-
-If 2FA is enabled for the account, `/auth/login` requires an additional field:
-
-```json
-{
-  "username": "alice",
-  "password": "StrongPass123",
-  "otp_code": "123456"
-}
-```
-
-Refresh request:
-
-```json
-{
-  "refresh_token": "<jwt-refresh-token>"
-}
-```
-
-Logout request:
-
-```json
-{
-  "refresh_token": "<jwt-refresh-token>"
-}
-```
-
-Request:
-
-```json
-{
-  "prompt": "Your question",
-  "max_output_tokens": 128
-}
-```
-
-Required request header:
-
-```text
-Authorization: Bearer <jwt-access-token>
-```
-
-Response:
-
-```json
-{
-  "response": "Model answer",
-  "pii_redacted": true,
-  "input_tokens": 42
-}
-```
-
-Streaming response format (`POST /api/chat/stream`):
-- Response content type is `text/event-stream`.
-- Events are emitted as `data: {...}` blocks.
-- Token chunk event:
-
-```text
-data: {"delta":"Hello "}
-```
-
-- Final event:
-
-```text
-data: {"done":true,"input_tokens":42,"pii_redacted":true}
-```
-
-## 7. Auto Deploy on `master-staging` (Jenkins)
-
-The `Jenkinsfile` now deploys automatically to your VM when branch `master-staging` is built.
-
-One-time Jenkins setup:
-- Add an `SSH Username with private key` credential with ID `csc-vm-ssh`.
-- Add a `Secret text` credential with ID `csc-vm-host` containing your VM floating IP or DNS.
-- Configure multibranch/webhook so pushes/merges to `master-staging` trigger a build.
-- Ensure repository exists on VM at `/home/<ssh-user>/secure-programming-llm` and `.env` is already configured there.
-
-Deploy behavior on each `master-staging` build:
-- Runs tests/audits/build stages first.
-- SSH to VM and fast-forward pulls `master-staging` in `/home/<ssh-user>/secure-programming-llm`.
-- Executes `docker compose up -d --build --remove-orphans`.
-- Verifies health via `http://localhost:8080/healthz`.
-
-## 8. Repository Hardening
-
-- Dependabot configuration is included in `.github/dependabot.yml` for:
-  - Python dependencies (`/backend`)
-  - Node dependencies (`/frontend`)
-  - Dockerfiles (`/backend`, `/frontend`)
+- `SECURITY.md`
