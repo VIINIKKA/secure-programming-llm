@@ -571,6 +571,26 @@ export default function App() {
     }
   }
 
+  function switchAuthMode(nextMode) {
+    setError("");
+    setMfaRequired(false);
+    setOtpCode("");
+    setAuthMode(nextMode);
+  }
+
+  const isLoginMode = authMode === "login";
+  const authTitle = isLoginMode ? "Welcome back" : "Create a protected workspace";
+  const authBody = isLoginMode
+    ? "Sign in to continue to the secured chat gateway."
+    : "Create a local account with JWT sessions and optional two-factor authentication.";
+  const authSubmitLabel = authBusy ? "Submitting..." : isLoginMode ? "Login" : "Create account";
+  const mfaStateLabel = mfaPending ? "Setup in progress" : mfaEnabled ? "2FA enabled" : "2FA disabled";
+  const mfaStateDescription = mfaPending
+    ? "Scan the QR code, verify one code from your authenticator app, and 2FA becomes required on future logins."
+    : mfaEnabled
+      ? "Your account now requires a time-based one-time code in addition to your password."
+      : "Enable authenticator-based 2FA to add a second factor to account access.";
+
   return (
     <main className="app-shell">
       <section className="panel">
@@ -587,113 +607,248 @@ export default function App() {
         </header>
 
         {!authReady ? (
-          <section className="auth-form">
-            <p className="auth-note">Restoring session...</p>
+          <section className="auth-loading">
+            <div className="auth-card auth-card-loading">
+              <span className="eyebrow">Session</span>
+              <h2>Restoring secure session</h2>
+              <p className="auth-note">Checking stored tokens and account security state.</p>
+            </div>
           </section>
         ) : !accessToken ? (
-          <form onSubmit={authMode === "login" ? onLogin : onRegister} className="auth-form">
-            <label htmlFor="username">Username</label>
-            <input
-              id="username"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              placeholder="admin"
-              autoComplete="username"
-            />
+          <section className="auth-layout">
+            <aside className="auth-hero">
+              <span className="eyebrow">Protected access</span>
+              <h2>Secure entry for your local LLM gateway</h2>
+              <p className="auth-note auth-hero-copy">
+                Accounts use JWT sessions with refresh rotation, optional authenticator-based 2FA, and backend
+                authorization checks before the model is reached.
+              </p>
+              <div className="hero-points">
+                <article className="hero-point">
+                  <span className="hero-point-kicker">JWT</span>
+                  <strong>Session-backed tokens</strong>
+                  <p>Access tokens stay lightweight while refresh and logout remain revocable server-side.</p>
+                </article>
+                <article className="hero-point">
+                  <span className="hero-point-kicker">2FA</span>
+                  <strong>Authenticator app support</strong>
+                  <p>Enable TOTP on your account and require a second factor for future logins.</p>
+                </article>
+                <article className="hero-point">
+                  <span className="hero-point-kicker">Guardrails</span>
+                  <strong>Secure backend first</strong>
+                  <p>Prompt filtering, PII redaction, scopes, and rate limits are enforced before model access.</p>
+                </article>
+              </div>
+            </aside>
 
-            <label htmlFor="password">Password</label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="password"
-              autoComplete={authMode === "login" ? "current-password" : "new-password"}
-            />
+            <form onSubmit={isLoginMode ? onLogin : onRegister} className="auth-card auth-form">
+              <div className="auth-mode-switch" role="tablist" aria-label="Authentication mode">
+                <button
+                  type="button"
+                  className={`mode-pill ${isLoginMode ? "mode-pill-active" : ""}`}
+                  onClick={() => switchAuthMode("login")}
+                  aria-selected={isLoginMode}
+                >
+                  Login
+                </button>
+                <button
+                  type="button"
+                  className={`mode-pill ${!isLoginMode ? "mode-pill-active" : ""}`}
+                  onClick={() => switchAuthMode("register")}
+                  aria-selected={!isLoginMode}
+                >
+                  Create account
+                </button>
+              </div>
 
-            {authMode === "login" && mfaRequired ? (
-              <>
-                <label htmlFor="otp-code">Authenticator code</label>
+              <div className="auth-card-header">
+                <span className="eyebrow">{isLoginMode ? "Account access" : "New account"}</span>
+                <h2>{authTitle}</h2>
+                <p className="auth-note">{authBody}</p>
+              </div>
+
+              <div className="field-group">
+                <label htmlFor="username">Username</label>
                 <input
-                  id="otp-code"
-                  inputMode="numeric"
-                  value={otpCode}
-                  onChange={(event) => setOtpCode(event.target.value)}
-                  placeholder="123456"
-                  autoComplete="one-time-code"
+                  id="username"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  placeholder="admin"
+                  autoComplete="username"
                 />
-              </>
-            ) : null}
+              </div>
 
-            <div className="auth-actions">
-              <button type="submit" disabled={authBusy} className="button-primary">
-                {authBusy ? "Submitting..." : authMode === "login" ? "Login" : "Create account"}
-              </button>
-              <button
-                type="button"
-                className="button-secondary"
-                onClick={() => {
-                  setError("");
-                  setMfaRequired(false);
-                  setOtpCode("");
-                  setAuthMode((current) => (current === "login" ? "register" : "login"));
-                }}
-                disabled={authBusy}
-              >
-                {authMode === "login" ? "Need an account?" : "Have an account?"}
-              </button>
-            </div>
-            <span className="auth-note">
-              {authMode === "login"
-                ? mfaRequired
-                  ? "Enter username, password, and 6-digit authenticator code."
-                  : "Log in with an existing account."
-                : "Password must include letters and numbers."}
-            </span>
-          </form>
+              <div className="field-group">
+                <div className="field-row">
+                  <label htmlFor="password">Password</label>
+                  {!isLoginMode ? <span className="field-hint">Use letters and numbers.</span> : null}
+                </div>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder={isLoginMode ? "Enter password" : "Create a strong password"}
+                  autoComplete={isLoginMode ? "current-password" : "new-password"}
+                />
+              </div>
+
+              {isLoginMode && mfaRequired ? (
+                <div className="auth-inline-panel">
+                  <div className="field-row">
+                    <label htmlFor="otp-code">Authenticator code</label>
+                    <span className="field-hint">Required for this account</span>
+                  </div>
+                  <input
+                    id="otp-code"
+                    inputMode="numeric"
+                    value={otpCode}
+                    onChange={(event) => setOtpCode(event.target.value)}
+                    placeholder="123456"
+                    autoComplete="one-time-code"
+                  />
+                  <p className="auth-note">Enter the current 6-digit code from your authenticator app.</p>
+                </div>
+              ) : null}
+
+              <div className="auth-actions">
+                <button type="submit" disabled={authBusy} className="button-primary button-wide">
+                  {authSubmitLabel}
+                </button>
+              </div>
+
+              <div className="auth-footer">
+                <p className="auth-note">
+                  {isLoginMode
+                    ? "Use your existing account. If 2FA is enabled, the form will ask for your one-time code."
+                    : "New accounts receive backend-protected chat scopes and can enable 2FA after sign-in."}
+                </p>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => switchAuthMode(isLoginMode ? "register" : "login")}
+                  disabled={authBusy}
+                >
+                  {isLoginMode ? "Need an account? Create one." : "Already have an account? Login instead."}
+                </button>
+              </div>
+            </form>
+          </section>
         ) : (
           <section className="chat">
-            <section className="mfa-panel">
-              <p className="mfa-title">Security: {mfaEnabled ? "2FA enabled" : "2FA disabled"}</p>
-              {!mfaEnabled && !mfaPending ? (
-                <button type="button" className="button-secondary" onClick={onStartMfaSetup} disabled={mfaBusy}>
-                  {mfaBusy ? "Preparing..." : "Set up 2FA"}
-                </button>
-              ) : null}
+            <section className="security-panel">
+              <div className="security-panel-header">
+                <div>
+                  <span className="eyebrow">Account security</span>
+                  <h2>{mfaStateLabel}</h2>
+                  <p className="auth-note">{mfaStateDescription}</p>
+                </div>
+                <span className={`status-chip ${mfaEnabled ? "status-chip-strong" : mfaPending ? "status-chip-warn" : ""}`}>
+                  {mfaStateLabel}
+                </span>
+              </div>
 
-              {mfaPending ? (
-                <div className="mfa-setup">
+              <div className="security-grid">
+                <article className="security-card">
+                  <h3>Session model</h3>
                   <p className="auth-note">
-                    Add this secret to your authenticator app, then enter a code to enable:
+                    Chat access is protected by JWT bearer tokens with refresh rotation and revocation in the backend.
                   </p>
-                  {mfaQrDataUrl ? <img className="mfa-qr" src={mfaQrDataUrl} alt="2FA setup QR code" /> : null}
-                  <code className="mfa-secret">{mfaSecret}</code>
-                  <a href={mfaUri} target="_blank" rel="noreferrer">
-                    Open provisioning URI
-                  </a>
-                </div>
-              ) : null}
+                  <ul className="security-list">
+                    <li>Authenticated requests only</li>
+                    <li>Refresh tokens can be rotated and revoked</li>
+                    <li>Chat routes enforce route-specific scopes</li>
+                  </ul>
+                </article>
 
-              {(mfaPending || mfaEnabled) ? (
-                <div className="mfa-actions">
-                  <input
-                    inputMode="numeric"
-                    value={mfaManageCode}
-                    onChange={(event) => setMfaManageCode(event.target.value)}
-                    placeholder="Enter 6-digit code"
-                  />
+                <article className="security-card security-card-accent">
+                  <div className="security-card-header">
+                    <div>
+                      <h3>Two-factor authentication</h3>
+                      <p className="auth-note">Protect your account with a time-based authenticator code.</p>
+                    </div>
+                    {!mfaEnabled && !mfaPending ? (
+                      <button type="button" className="button-secondary" onClick={onStartMfaSetup} disabled={mfaBusy}>
+                        {mfaBusy ? "Preparing..." : "Start setup"}
+                      </button>
+                    ) : null}
+                  </div>
+
                   {mfaPending ? (
-                    <button type="button" className="button-primary" onClick={onEnableMfa} disabled={mfaBusy}>
-                      {mfaBusy ? "Verifying..." : "Enable 2FA"}
-                    </button>
-                  ) : (
-                    <button type="button" className="button-secondary" onClick={onDisableMfa} disabled={mfaBusy}>
-                      {mfaBusy ? "Updating..." : "Disable 2FA"}
-                    </button>
-                  )}
-                </div>
-              ) : null}
-              {mfaStatusMsg ? <p className="auth-note">{mfaStatusMsg}</p> : null}
+                    <div className="mfa-setup-layout">
+                      <div className="mfa-qr-card">
+                        <span className="eyebrow">Step 1</span>
+                        <h4>Scan the QR code</h4>
+                        <p className="auth-note">Use Google Authenticator, 1Password, Authy, or another TOTP app.</p>
+                        {mfaQrDataUrl ? <img className="mfa-qr" src={mfaQrDataUrl} alt="2FA setup QR code" /> : null}
+                        <a className="mfa-link" href={mfaUri} target="_blank" rel="noreferrer">
+                          Open provisioning URI
+                        </a>
+                      </div>
+
+                      <div className="mfa-details-card">
+                        <span className="eyebrow">Step 2</span>
+                        <h4>Confirm setup</h4>
+                        <p className="auth-note">
+                          If scanning is not available, copy the secret manually into your authenticator app.
+                        </p>
+                        <code className="mfa-secret">{mfaSecret}</code>
+                        <div className="mfa-actions">
+                          <input
+                            inputMode="numeric"
+                            value={mfaManageCode}
+                            onChange={(event) => setMfaManageCode(event.target.value)}
+                            placeholder="Enter 6-digit code"
+                          />
+                          <button type="button" className="button-primary" onClick={onEnableMfa} disabled={mfaBusy}>
+                            {mfaBusy ? "Verifying..." : "Enable 2FA"}
+                          </button>
+                        </div>
+                        <p className="auth-note">After verification, future logins will require both password and OTP.</p>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {mfaEnabled ? (
+                    <div className="mfa-enabled-panel">
+                      <div>
+                        <span className="eyebrow">Manage 2FA</span>
+                        <h4>Disable with current code</h4>
+                        <p className="auth-note">
+                          For security, turning off 2FA requires a valid current authenticator code.
+                        </p>
+                      </div>
+                      <div className="mfa-actions">
+                        <input
+                          inputMode="numeric"
+                          value={mfaManageCode}
+                          onChange={(event) => setMfaManageCode(event.target.value)}
+                          placeholder="Enter 6-digit code"
+                        />
+                        <button type="button" className="button-secondary" onClick={onDisableMfa} disabled={mfaBusy}>
+                          {mfaBusy ? "Updating..." : "Disable 2FA"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {!mfaEnabled && !mfaPending ? (
+                    <div className="mfa-empty">
+                      <p className="auth-note">
+                        Setup takes two short steps: generate a secret, scan the QR code, then verify one code from
+                        your authenticator app.
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {mfaStatusMsg ? (
+                    <div className="status-banner">
+                      <p>{mfaStatusMsg}</p>
+                    </div>
+                  ) : null}
+                </article>
+              </div>
             </section>
 
             <div className="messages" aria-live="polite">
