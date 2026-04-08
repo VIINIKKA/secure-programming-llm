@@ -577,7 +577,7 @@ export default function App() {
         <header className="topbar">
           <div>
             <h1>Secure LLM Assistant</h1>
-            <p className="subtitle">JWT protected security layer in front of the model.</p>
+            <p className="subtitle">JWT and 2FA protected security layer in front of the model.</p>
           </div>
           {accessToken ? (
             <button type="button" className="button-secondary" onClick={onLogout}>
