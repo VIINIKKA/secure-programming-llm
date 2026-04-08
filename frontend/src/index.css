@@ -361,6 +361,32 @@ textarea:focus {
   gap: 14px;
 }
 
+.security-compact-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(155, 136, 106, 0.18);
+  background: rgba(255, 250, 242, 0.86);
+}
+
+.security-compact-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.security-compact-copy strong {
+  font-size: 0.98rem;
+}
+
+.security-compact-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .security-panel {
   border-radius: 24px;
   border: 1px solid rgba(155, 136, 106, 0.18);
@@ -611,6 +637,12 @@ textarea:focus {
   .security-panel-header,
   .security-card-header,
   .field-row {
+    flex-direction: column;
+    align-items: start;
+  }
+
+  .security-compact-bar,
+  .security-compact-actions {
     flex-direction: column;
     align-items: start;
   }

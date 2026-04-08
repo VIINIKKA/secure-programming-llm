@@ -101,6 +101,7 @@ export default function App() {
   const [mfaQrDataUrl, setMfaQrDataUrl] = useState("");
   const [mfaManageCode, setMfaManageCode] = useState("");
   const [mfaStatusMsg, setMfaStatusMsg] = useState("");
+  const [showSecurityPanel, setShowSecurityPanel] = useState(false);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -208,6 +209,7 @@ export default function App() {
     setMfaQrDataUrl("");
     setMfaManageCode("");
     setMfaStatusMsg("");
+    setShowSecurityPanel(false);
   }
 
   async function loadMfaStatus(token) {
@@ -373,6 +375,7 @@ export default function App() {
       setMfaPending(true);
       setMfaEnabled(false);
       setMfaStatusMsg("Secret generated. Add it to your authenticator app and verify.");
+      setShowSecurityPanel(true);
     } catch (err) {
       setError(err.message || "Failed to start 2FA setup.");
     } finally {
@@ -406,6 +409,7 @@ export default function App() {
       setMfaManageCode("");
       await loadMfaStatus(accessToken);
       setMfaStatusMsg("2FA enabled for your account.");
+      setShowSecurityPanel(false);
     } catch (err) {
       setError(err.message || "Failed to enable 2FA.");
     } finally {
@@ -439,6 +443,7 @@ export default function App() {
       setMfaManageCode("");
       await loadMfaStatus(accessToken);
       setMfaStatusMsg("2FA disabled.");
+      setShowSecurityPanel(true);
     } catch (err) {
       setError(err.message || "Failed to disable 2FA.");
     } finally {
@@ -588,6 +593,7 @@ export default function App() {
     : mfaEnabled
       ? "A code is now required at login."
       : "Add an authenticator code to your login.";
+  const shouldShowFullSecurityPanel = !mfaEnabled || mfaPending || showSecurityPanel;
 
   return (
     <main className="app-shell">
@@ -725,57 +731,98 @@ export default function App() {
           </section>
         ) : (
           <section className="chat">
-            <section className="security-panel">
-              <div className="security-panel-header">
-                <div>
-                  <span className="eyebrow">Account security</span>
-                  <h2>{mfaStateLabel}</h2>
-                  <p className="auth-note">{mfaStateDescription}</p>
+            {mfaEnabled && !mfaPending ? (
+              <div className="security-compact-bar">
+                <div className="security-compact-copy">
+                  <span className="eyebrow">Security</span>
+                  <strong>2FA enabled</strong>
                 </div>
-                <span className={`status-chip ${mfaEnabled ? "status-chip-strong" : mfaPending ? "status-chip-warn" : ""}`}>
-                  {mfaStateLabel}
-                </span>
+                <div className="security-compact-actions">
+                  <span className="status-chip status-chip-strong">Protected</span>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => setShowSecurityPanel((current) => !current)}
+                  >
+                    {showSecurityPanel ? "Hide" : "Manage"}
+                  </button>
+                </div>
               </div>
+            ) : null}
 
-              <div className="security-grid">
-                <article className="security-card">
-                  <h3>Session model</h3>
-                  <ul className="security-list">
-                    <li>Authenticated requests only</li>
-                    <li>Refresh tokens can be rotated and revoked</li>
-                    <li>Chat routes enforce route-specific scopes</li>
-                  </ul>
-                </article>
-
-                <article className="security-card security-card-accent">
-                  <div className="security-card-header">
-                    <div>
-                      <h3>Two-factor authentication</h3>
-                    </div>
-                    {!mfaEnabled && !mfaPending ? (
-                      <button type="button" className="button-secondary" onClick={onStartMfaSetup} disabled={mfaBusy}>
-                        {mfaBusy ? "Preparing..." : "Start setup"}
-                      </button>
-                    ) : null}
+            {shouldShowFullSecurityPanel ? (
+              <section className="security-panel">
+                <div className="security-panel-header">
+                  <div>
+                    <span className="eyebrow">Account security</span>
+                    <h2>{mfaStateLabel}</h2>
+                    <p className="auth-note">{mfaStateDescription}</p>
                   </div>
+                  <span className={`status-chip ${mfaEnabled ? "status-chip-strong" : mfaPending ? "status-chip-warn" : ""}`}>
+                    {mfaStateLabel}
+                  </span>
+                </div>
 
-                  {mfaPending ? (
-                    <div className="mfa-setup-layout">
-                      <div className="mfa-qr-card">
-                        <span className="eyebrow">Step 1</span>
-                        <h4>Scan the QR code</h4>
-                        <p className="auth-note">Use any TOTP app.</p>
-                        {mfaQrDataUrl ? <img className="mfa-qr" src={mfaQrDataUrl} alt="2FA setup QR code" /> : null}
-                        <a className="mfa-link" href={mfaUri} target="_blank" rel="noreferrer">
-                          Open provisioning URI
-                        </a>
+                <div className="security-grid">
+                  <article className="security-card">
+                    <h3>Session model</h3>
+                    <ul className="security-list">
+                      <li>Authenticated requests only</li>
+                      <li>Refresh tokens can be rotated and revoked</li>
+                      <li>Chat routes enforce route-specific scopes</li>
+                    </ul>
+                  </article>
+
+                  <article className="security-card security-card-accent">
+                    <div className="security-card-header">
+                      <div>
+                        <h3>Two-factor authentication</h3>
                       </div>
+                      {!mfaEnabled && !mfaPending ? (
+                        <button type="button" className="button-secondary" onClick={onStartMfaSetup} disabled={mfaBusy}>
+                          {mfaBusy ? "Preparing..." : "Start setup"}
+                        </button>
+                      ) : null}
+                    </div>
 
-                      <div className="mfa-details-card">
-                        <span className="eyebrow">Step 2</span>
-                        <h4>Confirm setup</h4>
-                        <p className="auth-note">Or paste the secret manually.</p>
-                        <code className="mfa-secret">{mfaSecret}</code>
+                    {mfaPending ? (
+                      <div className="mfa-setup-layout">
+                        <div className="mfa-qr-card">
+                          <span className="eyebrow">Step 1</span>
+                          <h4>Scan the QR code</h4>
+                          <p className="auth-note">Use any TOTP app.</p>
+                          {mfaQrDataUrl ? <img className="mfa-qr" src={mfaQrDataUrl} alt="2FA setup QR code" /> : null}
+                          <a className="mfa-link" href={mfaUri} target="_blank" rel="noreferrer">
+                            Open provisioning URI
+                          </a>
+                        </div>
+
+                        <div className="mfa-details-card">
+                          <span className="eyebrow">Step 2</span>
+                          <h4>Confirm setup</h4>
+                          <p className="auth-note">Or paste the secret manually.</p>
+                          <code className="mfa-secret">{mfaSecret}</code>
+                          <div className="mfa-actions">
+                            <input
+                              inputMode="numeric"
+                              value={mfaManageCode}
+                              onChange={(event) => setMfaManageCode(event.target.value)}
+                              placeholder="Enter 6-digit code"
+                            />
+                            <button type="button" className="button-primary" onClick={onEnableMfa} disabled={mfaBusy}>
+                              {mfaBusy ? "Verifying..." : "Enable 2FA"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {mfaEnabled ? (
+                      <div className="mfa-enabled-panel">
+                        <div>
+                          <span className="eyebrow">Manage 2FA</span>
+                          <h4>Disable with current code</h4>
+                        </div>
                         <div className="mfa-actions">
                           <input
                             inputMode="numeric"
@@ -788,43 +835,23 @@ export default function App() {
                           </button>
                         </div>
                       </div>
-                    </div>
-                  ) : null}
+                    ) : null}
 
-                  {mfaEnabled ? (
-                    <div className="mfa-enabled-panel">
-                      <div>
-                        <span className="eyebrow">Manage 2FA</span>
-                        <h4>Disable with current code</h4>
+                    {!mfaEnabled && !mfaPending ? (
+                      <div className="mfa-empty">
+                        <p className="auth-note">Scan, verify, and 2FA is active.</p>
                       </div>
-                      <div className="mfa-actions">
-                        <input
-                          inputMode="numeric"
-                          value={mfaManageCode}
-                          onChange={(event) => setMfaManageCode(event.target.value)}
-                          placeholder="Enter 6-digit code"
-                        />
-                        <button type="button" className="button-secondary" onClick={onDisableMfa} disabled={mfaBusy}>
-                          {mfaBusy ? "Updating..." : "Disable 2FA"}
-                        </button>
+                    ) : null}
+
+                    {mfaStatusMsg ? (
+                      <div className="status-banner">
+                        <p>{mfaStatusMsg}</p>
                       </div>
-                    </div>
-                  ) : null}
-
-                  {!mfaEnabled && !mfaPending ? (
-                    <div className="mfa-empty">
-                      <p className="auth-note">Scan, verify, and 2FA is active.</p>
-                    </div>
-                  ) : null}
-
-                  {mfaStatusMsg ? (
-                    <div className="status-banner">
-                      <p>{mfaStatusMsg}</p>
-                    </div>
-                  ) : null}
-                </article>
-              </div>
-            </section>
+                    ) : null}
+                  </article>
+                </div>
+              </section>
+            ) : null}
 
             <div className="messages" aria-live="polite">
               {messages.length === 0 ? (
