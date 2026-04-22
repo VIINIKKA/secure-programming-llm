@@ -103,6 +103,7 @@ export function useSecureLlmApp() {
     let isCancelled = false;
 
     async function restoreSession() {
+      // Prefer the access token if this tab still has one.
       if (accessToken) {
         await loadMfaStatus(accessToken);
         setAuthReady(true);
@@ -146,6 +147,7 @@ export function useSecureLlmApp() {
   }
 
   function resetMfaState() {
+    // Clear setup data when the signed-in user changes or logs out.
     setMfaRequired(false);
     setMfaEnabled(false);
     setMfaPending(false);
@@ -280,6 +282,7 @@ export function useSecureLlmApp() {
   }
 
   async function refreshSession(currentRefreshToken) {
+    // Refresh tokens rotate, so always store the returned pair.
     const response = await fetch(API_REFRESH_PATH, {
       method: "POST",
       headers: {
@@ -477,6 +480,7 @@ export function useSecureLlmApp() {
         const decoder = new TextDecoder();
         setMessageText(assistantMessageId, "Thinking...");
 
+        // Keep incomplete SSE blocks in the buffer until the next chunk arrives.
         while (true) {
           const { done, value } = await reader.read();
           if (done) {

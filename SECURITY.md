@@ -80,10 +80,3 @@ Pipeline-level checks (from `Jenkinsfile`):
 - `pip-audit -r backend/requirements.txt`
 - `npm audit --audit-level=high`
 
-## Known Gaps and Future Work
-
-1. Integrate external identity provider and stronger login policy (MFA/SSO/password hash lifecycle).
-2. Add TLS termination and hardened reverse proxy configuration.
-3. Strengthen prompt-injection defense beyond regex (classifier/rules layering).
-4. Extend container hardening coverage to all services and pin production image versions/digests.
-5. Expand security testing (integration abuse scenarios, DAST, fuzzing).

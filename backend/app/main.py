@@ -245,6 +245,7 @@ def _prepare_chat_context(body: ChatRequest, request: Request, required_scopes: 
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # Block obvious prompt-leak and jailbreak attempts before contacting the model.
     if settings.block_prompt_injection and is_prompt_injection(cleaned):
         logger.warning(
             "blocked prompt injection client=%s prompt=%s",
@@ -256,6 +257,7 @@ def _prepare_chat_context(body: ChatRequest, request: Request, required_scopes: 
     sanitized_input = cleaned
     pii_redacted = False
     if settings.redact_pii:
+        # Redact sensitive input before it leaves the backend.
         sanitized_input, pii_redacted = redact_pii(sanitized_input)
 
     token_count = approx_token_count(sanitized_input)
@@ -312,7 +314,7 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         try:
             async for chunk in llm_service.generate_stream(context["sanitized_input"], context["output_tokens"]):
                 full_response.append(chunk)
-                # Best-effort redaction per chunk; whole-response redaction is still performed for summary metadata.
+                # Redact each chunk before sending it to the browser.
                 safe_chunk = chunk
                 if settings.redact_pii:
                     safe_chunk, _ = redact_pii(safe_chunk)

@@ -18,6 +18,7 @@ class LLMService:
         await self._client.aclose()
 
     def _build_payload(self, prompt: str, max_output_tokens: int, stream: bool) -> dict:
+        # Keep the final output cap on the backend side.
         return {
             "model": self._settings.ollama_model,
             "prompt": prompt,
@@ -72,6 +73,7 @@ class LLMService:
                     if not line:
                         continue
 
+                    # Ollama streams one JSON object per line.
                     try:
                         part = json.loads(line)
                     except json.JSONDecodeError as exc:

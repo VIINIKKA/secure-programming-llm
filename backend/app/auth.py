@@ -115,6 +115,7 @@ def _verify_password(password: str, stored_hash: str) -> bool:
         return False
 
     actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    # Use constant-time comparison for password hash checks.
     return secrets.compare_digest(actual, expected)
 
 
@@ -505,6 +506,7 @@ def close_auth_resources() -> None:
 
 
 def _ensure_bootstrap_user(settings: Settings) -> None:
+    # Keep the configured admin account available for fresh deployments.
     try:
         username = normalize_username(settings.auth_username)
     except ValueError:
@@ -585,6 +587,7 @@ def begin_mfa_setup(username: str, settings: Settings) -> tuple[str, str]:
     if not store.get_user(normalized):
         raise HTTPException(status_code=404, detail="User not found.")
 
+    # Store the secret as pending until the user proves they can generate a code.
     secret = pyotp.random_base32()
     saved = store.set_pending_mfa_secret(normalized, secret)
     if not saved:
@@ -789,6 +792,7 @@ def refresh_token_pair(refresh_token: str, settings: Settings) -> TokenPair:
     session_id = str(payload["sid"])
     refresh_jti = str(payload["jti"])
 
+    # Rotate before issuing the next access token.
     next_refresh_jti = str(uuid4())
     next_refresh_token, refresh_expires_in, refresh_expires_at = _create_refresh_token(
         subject=subject,
@@ -862,6 +866,7 @@ def validate_bearer_token(
     if not session:
         raise HTTPException(status_code=401, detail="Session is not active.")
 
+    # Trust role and scopes from the server-side session, not from the token body.
     identity = AuthIdentity(
         subject=subject,
         role=session.role,
