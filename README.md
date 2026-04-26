@@ -68,7 +68,7 @@ If you are reviewing the project for implementation quality, open these files fi
 - `Jenkinsfile`
 - `SECURITY.md`
 
-## Backend Tour
+## Backend
 
 ### `backend/app/main.py`
 
@@ -202,7 +202,7 @@ sequenceDiagram
     BE-->>FE: New token pair
 ```
 
-## Frontend Tour
+## Frontend
 
 The frontend lives mainly in `frontend/src/App.jsx`.
 
@@ -357,7 +357,7 @@ High-value areas in the repository:
 
 ## Minimal Setup
 
-This repository is primarily intended to be read as an implementation tour, but if needed, the local stack can still be started with:
+This repository is primarily intended to be read as an implementation "tour", but if needed, the local stack can still be started with:
 
 ```bash
 cp .env.example .env
