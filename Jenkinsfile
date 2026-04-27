@@ -27,11 +27,12 @@ pipeline {
             }
         }
 
-        stage('Frontend Audit') {
+        stage('Frontend Tests and Audit') {
             steps {
                 sh '''
                     cd frontend
                     npm ci
+                    npm run test:run
                     npm audit --audit-level=high
                 '''
             }

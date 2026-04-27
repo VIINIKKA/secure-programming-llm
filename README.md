@@ -368,6 +368,7 @@ Useful verification commands:
 
 ```bash
 pytest -q backend/tests
+npm --prefix frontend run test:run
 npm --prefix frontend run build
 curl http://localhost:8080/healthz
 ```
